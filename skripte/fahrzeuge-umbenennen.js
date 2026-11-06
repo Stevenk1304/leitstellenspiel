@@ -85,15 +85,14 @@
         }
     }
 
+    lss.actions.renamePlan = buildPlan;
+    lss.actions.rename = start;
+
     if (lss.isWorkerFrame) return;
 
     // Menüeintrag im Tampermonkey-Menü: alle Wachen auf einmal
     if (window === window.top) GM_registerMenuCommand('Alle Fahrzeuge umbenennen', () => start(null));
 
-    // Knopf auf der Gebäudeseite: nur diese Wache
-    const match = location.pathname.match(/^\/buildings\/(\d+)\/?$/);
-    const table = document.querySelector('#vehicle_table');
-    if (match && table) {
-        lss.addPageButton(table, '✎ Fahrzeuge dieser Wache umbenennen', () => start(Number(match[1])));
-    }
+    lss.addTool({ label: '✎ Fahrzeuge umbenennen', scope: 'building', order: 20, run: id => start(id) });
+    lss.addTool({ label: '✎ Fahrzeuge umbenennen (alle Wachen)', scope: 'all', order: 20, run: () => start(null) });
 })();

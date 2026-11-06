@@ -124,20 +124,23 @@
         }
     }
 
+    // buildingId und vehicleId beide null: alle Fahrzeuge aller Wachen
     async function buildPlan(buildingId, vehicleId) {
         const [vehicles, types] = await Promise.all([lss.getJSON('/api/vehicles'), lss.getVehicleTypes()]);
-        const atBuilding = vehicles.filter(v => vehicleId !== null ? v.id === vehicleId : v.building_id === buildingId);
-        const ownBuilding = atBuilding[0]?.building_id;
-        const neededAtBuilding = new Set(vehicles
-            .filter(v => v.building_id === ownBuilding)
-            .flatMap(v => {
-                const req = requirements(types[v.vehicle_type], 99);
-                return [...req.all, ...Object.keys(req.min)];
-            }));
+        const selected = vehicles.filter(v =>
+            vehicleId !== null ? v.id === vehicleId : buildingId === null || v.building_id === buildingId);
+
+        // Pro Wache: welche Ausbildungen braucht irgendein Fahrzeug dort?
+        const neededByBuilding = {};
+        for (const v of vehicles) {
+            const req = requirements(types[v.vehicle_type], 99);
+            const set = neededByBuilding[v.building_id] ??= new Set();
+            [...req.all, ...Object.keys(req.min)].forEach(k => set.add(k));
+        }
 
         return {
-            neededAtBuilding,
-            items: atBuilding
+            neededByBuilding,
+            items: selected
                 .map(v => {
                     const type = types[v.vehicle_type];
                     const max = v.max_personnel_override ?? type?.maxPersonnel ?? type?.staff?.max ?? 0;
@@ -150,14 +153,14 @@
         };
     }
 
-    function showDialog({ items, neededAtBuilding }) {
+    function showDialog({ items, neededByBuilding }) {
         const label = p => `${p.current} / ${p.max} Personal`;
         lss.openDialog({
             title: 'Personal zuweisen',
             count: `${items.length} Fahrzeug${items.length === 1 ? '' : 'e'}`,
             rows: items.map(p => ({ left: p.vehicle.caption, right: label(p) })),
             empty: 'Alle Fahrzeuge sind schon voll besetzt.',
-            hint: 'Es wird nur freies Personal dieser Wache zugewiesen, das zur Ausbildung des Fahrzeugs passt.',
+            hint: 'Es wird nur freies Personal der jeweiligen Wache zugewiesen, das zur Ausbildung des Fahrzeugs passt.',
             startLabel: 'Personal zuweisen',
             async run(ui) {
                 let added = 0, failed = 0;
@@ -165,7 +168,8 @@
                     const p = items[i];
                     ui.busy(i);
                     try {
-                        const n = await fillVehicle(p.vehicle, p.req, p.max, neededAtBuilding, ui.cancelled);
+                        const needed = neededByBuilding[p.vehicle.building_id] ?? new Set();
+                        const n = await fillVehicle(p.vehicle, p.req, p.max, needed, ui.cancelled);
                         p.current += n;
                         ui.setRight(i, label(p));
                         if (n) ui.done(i, 'ok', `+${n}`);
@@ -190,14 +194,12 @@
         }
     }
 
+    lss.actions.assign = buildingId => start(buildingId, null);
+
     if (lss.isWorkerFrame) return;
 
-    // Gebäudeseite: alle Fahrzeuge der Wache
-    const building = location.pathname.match(/^\/buildings\/(\d+)\/?$/);
-    const vehicleTable = document.querySelector('#vehicle_table');
-    if (building && vehicleTable) {
-        lss.addPageButton(vehicleTable, '👥 Personal für alle Fahrzeuge zuweisen', () => start(Number(building[1]), null));
-    }
+    lss.addTool({ label: '👥 Personal zuweisen', scope: 'building', order: 30, run: id => start(id, null) });
+    lss.addTool({ label: '👥 Personal zuweisen (alle Wachen)', scope: 'all', order: 30, run: () => start(null, null) });
 
     // Zuweisungsseite: nur dieses Fahrzeug
     const assignment = location.pathname.match(/^\/vehicles\/(\d+)\/zuweisung\/?$/);

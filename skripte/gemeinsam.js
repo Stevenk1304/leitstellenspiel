@@ -9,10 +9,19 @@ const lss = (() => {
 
     const csrfToken = () => document.querySelector('meta[name="csrf-token"]')?.content;
 
-    const getJSON = url => fetch(url, { credentials: 'include' }).then(r => {
-        if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
-        return r.json();
-    });
+    // Kurzer Cache, damit mehrere Skripte direkt nacheinander nicht dieselben Daten doppelt laden
+    const jsonCache = {};
+    const getJSON = url => {
+        const hit = jsonCache[url];
+        if (hit && Date.now() - hit.time < 10000) return hit.promise;
+        const promise = fetch(url, { credentials: 'include' }).then(r => {
+            if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
+            return r.json();
+        });
+        promise.catch(() => delete jsonCache[url]);
+        jsonCache[url] = { time: Date.now(), promise };
+        return promise;
+    };
 
     // Fahrzeugtypen von der LSSM-API (Kurzname, Besatzung, Ausbildungen), nur einmal pro Seite geladen
     let vehicleTypes;
@@ -180,7 +189,7 @@ const lss = (() => {
         };
     }
 
-    // Knopf auf einer Spielseite einfügen
+    // Einfacher Knopf auf einer Spielseite (z.B. in der Personalzuweisung)
     function addPageButton(target, label, onClick) {
         const btn = document.createElement('button');
         btn.className = 'btn btn-xs btn-danger';
@@ -191,8 +200,116 @@ const lss = (() => {
             onClick();
         };
         target.before(btn);
-        return btn;
     }
 
-    return { sleep, csrfToken, getJSON, getVehicleTypes, escapeHtml, isWorkerFrame, openDialog, addPageButton };
+    // Werkzeug-Menü oben in der Spiel-Leiste.
+    // scope 'building': nur sichtbar, wenn gerade eine Wache offen ist, run(buildingId)
+    // scope 'all': immer sichtbar, run()
+    const tools = [];
+    let navItem;
+
+    // Welche Wache ist gerade offen? Entweder die Seite selbst oder ein Popup-Fenster des Spiels
+    function currentBuilding() {
+        const windows = [window, ...[...document.querySelectorAll('iframe')]
+            .filter(f => f.name !== 'lss-worker' && f.offsetParent !== null)
+            .map(f => { try { return f.contentWindow; } catch (e) { return null; } })
+            .filter(Boolean)];
+        for (const w of windows.reverse()) {
+            try {
+                const m = w.location.pathname.match(/^\/buildings\/(\d+)\/?$/);
+                if (m) return { id: Number(m[1]), name: w.document.querySelector('h1')?.textContent.trim() || 'Diese Wache' };
+            } catch (e) { /* fremdes Fenster */ }
+        }
+        return null;
+    }
+
+    function fillNavMenu(list) {
+        const building = currentBuilding();
+        const sorted = [...tools].sort((a, b) => a.order - b.order);
+        const entry = (tool, arg) => {
+            const li = document.createElement('li');
+            const a = document.createElement('a');
+            a.href = '#';
+            a.textContent = tool.label;
+            a.onclick = e => {
+                e.preventDefault();
+                navItem.classList.remove('open');
+                tool.run(arg);
+            };
+            li.append(a);
+            return li;
+        };
+        const header = text => {
+            const li = document.createElement('li');
+            li.className = 'dropdown-header';
+            li.textContent = text;
+            return li;
+        };
+        list.innerHTML = '';
+        const own = sorted.filter(t => t.scope === 'building');
+        if (building && own.length) {
+            list.append(header(building.name), ...own.map(t => entry(t, building.id)));
+            const divider = document.createElement('li');
+            divider.className = 'divider';
+            divider.setAttribute('role', 'separator');
+            list.append(divider);
+        }
+        list.append(header('Alle Wachen'), ...sorted.filter(t => t.scope === 'all').map(t => entry(t)));
+    }
+
+    function addTool(tool) {
+        if (window !== window.top || isWorkerFrame) return;
+        tools.push({ order: 50, scope: 'all', ...tool });
+        if (navItem) return;
+        const nav = document.querySelector('#navbar-main-collapse > ul.nav');
+        if (!nav) return;
+        navItem = document.createElement('li');
+        navItem.className = 'dropdown';
+        navItem.innerHTML = '<a href="#" class="dropdown-toggle" role="button">🛠 Werkzeuge <span class="caret"></span></a><ul class="dropdown-menu"></ul>';
+        // Eigenes Auf-/Zuklappen statt Bootstrap, damit der Inhalt beim Öffnen frisch berechnet wird
+        navItem.firstElementChild.onclick = e => {
+            e.preventDefault();
+            e.stopPropagation();
+            const open = !navItem.classList.contains('open');
+            document.querySelectorAll('#navbar-main-collapse .dropdown.open').forEach(d => d.classList.remove('open'));
+            if (open) fillNavMenu(navItem.lastElementChild);
+            navItem.classList.toggle('open', open);
+        };
+        document.addEventListener('click', e => { if (!navItem.contains(e.target)) navItem.classList.remove('open'); });
+        nav.prepend(navItem);
+    }
+
+    // Leeres Fenster im gleichen Design; der Inhalt kommt vom aufrufenden Skript
+    function openPanel({ title, count, body }) {
+        injectStyle();
+        const overlay = document.createElement('div');
+        overlay.className = 'lssr-overlay';
+        overlay.innerHTML = `
+            <div class="lssr-dialog lssr-wide">
+                <div class="lssr-head">
+                    <h3>${escapeHtml(title)}</h3>
+                    <span class="lssr-count">${escapeHtml(count)}</span>
+                    <button class="lssr-x" title="Schließen">×</button>
+                </div>
+                <div class="lssr-body">${body}</div>
+            </div>`;
+        document.body.append(overlay);
+        const close = () => {
+            overlay.remove();
+            document.removeEventListener('keydown', onKey);
+        };
+        // Nur schließen, wenn kein anderes Fenster (z.B. Umbenennen) darüber liegt
+        const onKey = e => {
+            if (e.key === 'Escape' && [...document.querySelectorAll('.lssr-overlay')].pop() === overlay) close();
+        };
+        document.addEventListener('keydown', onKey);
+        overlay.querySelector('.lssr-x').onclick = close;
+        overlay.onclick = e => { if (e.target === overlay) close(); };
+        return { root: overlay.querySelector('.lssr-body'), close };
+    }
+
+    // Andere Skripte tragen hier ihre Funktionen ein, damit z.B. der Wachen-Check sie aufrufen kann
+    const actions = {};
+
+    return { sleep, csrfToken, getJSON, getVehicleTypes, escapeHtml, isWorkerFrame, openDialog, openPanel, addPageButton, addTool, actions };
 })();
