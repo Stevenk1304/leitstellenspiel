@@ -92,7 +92,7 @@
         try {
             showDialog(await buildPlan(buildingIds));
         } catch (e) {
-            alert(`Personalwerbung: Fehler beim Laden der Daten\n${e.message}`);
+            lss.report('Personalwerbung', e);
         }
     }
 

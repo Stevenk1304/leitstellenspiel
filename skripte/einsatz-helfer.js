@@ -321,7 +321,7 @@
             }
             const [label, typeIds] = REQ[key] ?? [key, []];
             rows.push({
-                label, needed, chance: m.chances[key] ?? null, unknown: !typeIds.length, typeIds,
+                key, label, needed, chance: m.chances[key] ?? null, unknown: !typeIds.length, typeIds,
                 scene: sumFor(counts.scene, typeIds), driving: sumFor(counts.driving, typeIds), selected: sumFor(counts.selected, typeIds),
             });
         }
@@ -440,12 +440,15 @@
         try {
             [missions, types] = await Promise.all([getMissionTypes(), lss.getVehicleTypes()]);
         } catch (e) {
-            console.warn('Einsatz-Helfer: Daten konnten nicht geladen werden', e);
+            lss.report('Einsatz-Helfer', e);
             return;
         }
         const key = missionTypeKey(missions);
         if (!key) return;
         const m = missions[key];
+        // Für den Kauf-Berater: welche Einsätze bei dir vorkommen
+        const missionId = location.pathname.match(/\/missions\/(\d+)/)[1];
+        lss.actions.recordMission?.(missionId, key);
 
         injectStyle(document);
         const box = document.createElement('div');
@@ -457,7 +460,7 @@
         let ownVehicles = null;
         lss.getJSON('/api/vehicles')
             .then(list => { ownVehicles = Object.fromEntries(list.map(v => [String(v.id), v])); update(); })
-            .catch(e => console.warn('Einsatz-Helfer: Fahrzeugdaten nicht geladen', e));
+            .catch(e => lss.report('Einsatz-Helfer (Fahrzeugdaten)', e));
 
         let lastState = '';
         let pickMsg = '';
@@ -493,6 +496,8 @@
                 }
                 const e2 = lss.escapeHtml;
                 const rest = result.stillMissing.map(r => e2(r.label));
+                // Für den Kauf-Berater: wofür kein freies Fahrzeug da war
+                result.stillMissing.filter(r => r.key).forEach(r => lss.actions.recordShortage?.(missionId, r.key));
                 pickMsg = result.picked
                     ? `<b>${result.picked}</b> Fahrzeug${result.picked === 1 ? '' : 'e'} ausgewählt. Alarmieren musst du selbst.${rest.length ? ` Kein freies Fahrzeug für: ${rest.join(', ')}` : ''}`
                     : `Kein passendes freies Fahrzeug in der Liste${rest.length ? ` für: ${rest.join(', ')}` : ''}.`;
@@ -512,5 +517,9 @@
     }
 
     if (lss.isWorkerFrame) return;
-    init();
+    // Für den Kauf-Berater: Zuordnung Anforderung → Fahrzeugtypen und die Einsatzdaten
+    lss.actions.missionRequirements = REQ;
+    lss.actions.missionTypes = getMissionTypes;
+
+    lss.safe('Einsatz-Helfer', init)();
 })();

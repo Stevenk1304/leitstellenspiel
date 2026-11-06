@@ -4,7 +4,7 @@ Eigene Tampermonkey-Skripte für leitstellenspiel.de.
 
 | Datei | Funktion |
 |---|---|
-| `skripte/gemeinsam.js` | Gemeinsame Hilfsfunktionen und Fenster-Design (muss zuerst geladen werden) |
+| `skripte/gemeinsam.js` | Gemeinsame Hilfsfunktionen, Fenster-Design, Werkzeuge-Menü und Fehler-Melder mit 🐞 Fehlerprotokoll (muss zuerst geladen werden) |
 | `skripte/fahrzeuge-umbenennen.js` | Fahrzeuge nach dem Muster `RTW-1 \| Wache` umbenennen |
 | `skripte/personal-zuweisen.js` | Fahrzeuge mit passendem freiem Personal der Wache auffüllen |
 | `skripte/wachen-check.js` | Übersicht über Probleme an allen Wachen (Personal, Namen, Leitstelle, Ausbauten) |
@@ -13,6 +13,7 @@ Eigene Tampermonkey-Skripte für leitstellenspiel.de.
 | `skripte/auslastung.js` | Belegung der Krankenhäuser und Zellen |
 | `skripte/einsatz-helfer.js` | Im Alarmfenster: was der Einsatz braucht, was da ist und was fehlt; „Fehlendes auswählen“ hakt die nächsten passenden Fahrzeuge an |
 | `skripte/dashboard.js` | Alle wichtigen Zahlen auf einen Blick, mit Schnellzugriff auf die Werkzeuge |
+| `skripte/kauf-berater.js` | „Was soll ich kaufen?“: merkt sich Einsätze und Engpässe der letzten 14 Tage und empfiehlt Fahrzeuge |
 
 Alle Funktionen stehen im Menü **🛠 Werkzeuge** oben in der Spiel-Leiste. Ist gerade eine Wache offen
 (auch im Popup), stehen oben die Einträge für diese Wache, darunter die für alle Wachen.

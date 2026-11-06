@@ -102,7 +102,7 @@
         try {
             buildings = await lss.getJSON('/api/buildings');
         } catch (e) {
-            alert(`Auslastung: Fehler beim Laden der Daten\n${e.message}`);
+            lss.report('Auslastung', e);
             return;
         }
         const hospitals = buildings.filter(b => b.building_type === HOSPITAL).map(b => ({ b, used: null, max: null }));

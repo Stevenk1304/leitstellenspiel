@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         LSS Skripte (lokal)
-// @version      1.5.0
+// @version      1.6.0
 // @description  Lädt die eigenen Leitstellenspiel-Skripte direkt aus C:\Users\steve\Documents\GitHub\leitstellenspiel\skripte
 // @match        https://www.leitstellenspiel.de/*
 // @match        https://leitstellenspiel.de/*
@@ -8,6 +8,7 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
 // @grant        GM_setValue
+// @grant        GM_setClipboard
 // @connect      api.lss-manager.de
 // @run-at       document-idle
 // @require      file:///C:/Users/steve/Documents/GitHub/leitstellenspiel/skripte/gemeinsam.js
@@ -19,6 +20,7 @@
 // @require      file:///C:/Users/steve/Documents/GitHub/leitstellenspiel/skripte/auslastung.js
 // @require      file:///C:/Users/steve/Documents/GitHub/leitstellenspiel/skripte/einsatz-helfer.js
 // @require      file:///C:/Users/steve/Documents/GitHub/leitstellenspiel/skripte/dashboard.js
+// @require      file:///C:/Users/steve/Documents/GitHub/leitstellenspiel/skripte/kauf-berater.js
 // ==/UserScript==
 
 // Der eigentliche Code steht in den Dateien unter @require.

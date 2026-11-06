@@ -86,7 +86,7 @@
         try {
             [vehicles, types, buildings] = await Promise.all([lss.getJSON('/api/vehicles'), lss.getVehicleTypes(), lss.getJSON('/api/buildings')]);
         } catch (e) {
-            alert(`Fahrzeug-Übersicht: Fehler beim Laden der Daten\n${e.message}`);
+            lss.report('Fahrzeug-Übersicht', e);
             return;
         }
         if (buildingId !== null) vehicles = vehicles.filter(v => v.building_id === buildingId);

@@ -41,6 +41,115 @@ const lss = (() => {
     // Unsichtbare Hilfsfenster der Skripte selbst sollen keine Knöpfe bekommen
     const isWorkerFrame = window.name === 'lss-worker';
 
+    // ---- Fehler-Melder ----
+    // Fehler landen als Hinweis unten rechts (mit Kopier-Knopf) und im Fehlerprotokoll (letzte 30).
+    const LOG_KEY = 'lss.errorLog';
+    const LOG_MAX = 30;
+
+    const readLog = () => { try { return GM_getValue(LOG_KEY, []); } catch (e) { return []; } };
+    const clearLog = () => { try { GM_setValue(LOG_KEY, []); } catch (e) { /* kein Speicher */ } };
+
+    // Lokale Pfade aus dem Stack entfernen, damit nur "skripte/datei.js:zeile" übrig bleibt
+    const cleanStack = stack => String(stack ?? '')
+        .split('\n').slice(0, 6)
+        .map(l => l.replace(/file:\/\/\/\S*?\/skripte\//g, 'skripte/').trim())
+        .join('\n');
+
+    function formatReport(entries) {
+        const version = (() => { try { return GM_info.script.version; } catch (e) { return '?'; } })();
+        return [
+            `LSS-Skripte Fehlerbericht (Lade-Skript ${version})`,
+            ...entries.map(en => [
+                '',
+                `[${new Date(en.time).toLocaleString('de-DE')}] ${en.source}`,
+                `Seite: ${en.page}`,
+                `Fehler: ${en.message}`,
+                en.stack ? `Stack:\n${en.stack}` : '',
+            ].filter(Boolean).join('\n')),
+        ].join('\n');
+    }
+
+    function copyText(text) {
+        try { GM_setClipboard(text, 'text'); return true; } catch (e) { /* weiter mit Fallback */ }
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.cssText = 'position:fixed;left:-9999px';
+        document.body.append(ta);
+        ta.select();
+        const ok = document.execCommand('copy');
+        ta.remove();
+        return ok;
+    }
+
+    const TOAST_STYLE = `
+        .lssr-toasts { position:fixed; right:16px; bottom:16px; z-index:100000; display:flex; flex-direction:column; gap:8px; max-width:min(420px, calc(100vw - 32px)); font-family:"Helvetica Neue",Arial,sans-serif; }
+        .lssr-toast { background:#22252a; color:#e6e6e6; border:1px solid #3a3f47; border-left:4px solid #c9302c; border-radius:8px; padding:10px 12px; box-shadow:0 10px 30px rgba(0,0,0,.5); font-size:13px; animation:lssr-fade .15s ease-out; }
+        .lssr-toast b { color:#fff; display:block; margin-bottom:3px; }
+        .lssr-toast p { margin:0 0 8px; color:#aab0b8; word-break:break-word; }
+        .lssr-toast .lssr-btn { padding:4px 10px; font-size:12px; margin-right:6px; }
+    `;
+
+    function showToast(entry) {
+        injectStyle();
+        if (!document.getElementById('lssr-toast-style')) {
+            const style = document.createElement('style');
+            style.id = 'lssr-toast-style';
+            style.textContent = TOAST_STYLE;
+            document.head.append(style);
+        }
+        let box = document.querySelector('.lssr-toasts');
+        if (!box) {
+            box = document.createElement('div');
+            box.className = 'lssr-toasts';
+            document.body.append(box);
+        }
+        // Höchstens drei Hinweise gleichzeitig
+        while (box.children.length >= 3) box.firstElementChild.remove();
+        const toast = document.createElement('div');
+        toast.className = 'lssr-toast';
+        toast.innerHTML = `
+            <b>⚠ Fehler in „${escapeHtml(entry.source)}“</b>
+            <p>${escapeHtml(entry.message)}</p>
+            <button class="lssr-btn lssr-btn-primary">📋 Bericht kopieren</button>
+            <button class="lssr-btn lssr-btn-ghost">Schließen</button>`;
+        const [copyBtn, closeBtn] = toast.querySelectorAll('button');
+        copyBtn.onclick = () => { copyBtn.textContent = copyText(formatReport([entry])) ? '✓ Kopiert, jetzt bei Claude einfügen' : 'Kopieren ging nicht'; };
+        closeBtn.onclick = () => toast.remove();
+        box.append(toast);
+        setTimeout(() => toast.remove(), 30000);
+    }
+
+    // source: welches Werkzeug, error: Error oder Text
+    function report(source, error) {
+        const entry = {
+            time: Date.now(),
+            source,
+            message: error?.message ?? String(error),
+            stack: cleanStack(error?.stack),
+            page: location.pathname,
+        };
+        console.error(`[LSS-Skripte] ${source}:`, error);
+        try { GM_setValue(LOG_KEY, [entry, ...readLog()].slice(0, LOG_MAX)); } catch (e) { /* kein Speicher */ }
+        if (!isWorkerFrame && document.body) showToast(entry);
+    }
+
+    // Funktion so einpacken, dass Fehler (auch in async-Funktionen) gemeldet statt verschluckt werden
+    const safe = (source, fn) => (...args) => {
+        try {
+            const result = fn(...args);
+            if (result?.catch) result.catch(e => report(source, e));
+            return result;
+        } catch (e) {
+            report(source, e);
+            return undefined;
+        }
+    };
+
+    // Unbehandelte Fehler, deren Stack auf eines der eigenen Skripte zeigt
+    const ours = stack => /skripte\/|LSS Skripte/.test(String(stack ?? ''));
+    window.addEventListener('error', e => { if (ours(e.error?.stack ?? e.filename)) report('Unbekannt', e.error ?? e.message); });
+    window.addEventListener('unhandledrejection', e => { if (ours(e.reason?.stack)) report('Unbekannt', e.reason); });
+
     const STYLE = `
         .lssr-overlay { position:fixed; inset:0; z-index:99999; display:flex; align-items:center; justify-content:center;
             background:rgba(0,0,0,.65); backdrop-filter:blur(2px); font-family:"Helvetica Neue",Arial,sans-serif; animation:lssr-fade .15s ease-out; }
@@ -178,6 +287,7 @@ const lss = (() => {
                 summary = await run(api);
             } catch (e) {
                 summary = `Abgebrochen: ${e.message}`;
+                report(title, e);
             }
             running = false;
             finished = true;
@@ -259,7 +369,7 @@ const lss = (() => {
 
     function addTool(tool) {
         if (window !== window.top || isWorkerFrame) return;
-        tools.push({ order: 50, scope: 'all', ...tool });
+        tools.push({ order: 50, scope: 'all', ...tool, run: safe(tool.label, tool.run) });
         if (navItem) return;
         const nav = document.querySelector('#navbar-main-collapse > ul.nav');
         if (!nav) return;
@@ -311,5 +421,37 @@ const lss = (() => {
     // Andere Skripte tragen hier ihre Funktionen ein, damit z.B. der Wachen-Check sie aufrufen kann
     const actions = {};
 
-    return { sleep, csrfToken, getJSON, getVehicleTypes, escapeHtml, isWorkerFrame, openDialog, openPanel, addPageButton, addTool, actions };
+    // Fehlerprotokoll: die letzten gespeicherten Fehler mit Kopier- und Leeren-Knopf
+    function showLog() {
+        const entries = readLog();
+        const panel = openPanel({
+            title: '🐞 Fehlerprotokoll',
+            count: `${entries.length} Fehler`,
+            body: `
+                <div class="lssr-list" style="padding:10px 18px">${entries.length
+                    ? entries.map(en => `
+                        <div style="padding:8px 0;border-bottom:1px solid #2e3238;font-size:13px">
+                            <div><b style="color:#fff">${escapeHtml(en.source)}</b> <span style="color:#8b929c">· ${new Date(en.time).toLocaleString('de-DE')} · ${escapeHtml(en.page)}</span></div>
+                            <div style="color:#ff8a84;margin-top:2px">${escapeHtml(en.message)}</div>
+                        </div>`).join('')
+                    : '<div class="lssr-empty">✔ Keine Fehler aufgezeichnet.</div>'}
+                </div>
+                <div class="lssr-foot"><div class="lssr-actions">
+                    <button class="lssr-btn lssr-btn-ghost lssr-log-clear" ${entries.length ? '' : 'disabled'}>Protokoll leeren</button>
+                    <button class="lssr-btn lssr-btn-primary lssr-log-copy" ${entries.length ? '' : 'disabled'}>📋 Alles kopieren</button>
+                </div></div>`,
+        });
+        panel.root.querySelector('.lssr-log-copy').onclick = e => {
+            e.target.textContent = copyText(formatReport(entries)) ? '✓ Kopiert' : 'Kopieren ging nicht';
+        };
+        panel.root.querySelector('.lssr-log-clear').onclick = () => {
+            clearLog();
+            panel.close();
+            showLog();
+        };
+    }
+
+    addTool({ label: '🐞 Fehlerprotokoll', scope: 'all', order: 99, run: showLog });
+
+    return { sleep, csrfToken, getJSON, getVehicleTypes, escapeHtml, isWorkerFrame, openDialog, openPanel, addPageButton, addTool, actions, report, safe };
 })();

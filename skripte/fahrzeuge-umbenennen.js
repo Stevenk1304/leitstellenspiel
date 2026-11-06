@@ -81,7 +81,7 @@
         try {
             showDialog(await buildPlan(buildingId));
         } catch (e) {
-            alert(`Fahrzeuge umbenennen: Fehler beim Laden der Daten\n${e.message}`);
+            lss.report('Fahrzeuge umbenennen', e);
         }
     }
 

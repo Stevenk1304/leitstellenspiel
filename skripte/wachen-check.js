@@ -153,7 +153,7 @@
         try {
             results = await collect(buildingId);
         } catch (e) {
-            alert(`Wachen-Check: Fehler beim Laden der Daten\n${e.message}`);
+            lss.report('Wachen-Check', e);
             return;
         }
         injectStyle();

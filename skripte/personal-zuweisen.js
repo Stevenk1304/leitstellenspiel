@@ -190,7 +190,7 @@
         try {
             showDialog(await buildPlan(buildingId, vehicleId));
         } catch (e) {
-            alert(`Personal zuweisen: Fehler beim Laden der Daten\n${e.message}`);
+            lss.report('Personal zuweisen', e);
         }
     }
 
