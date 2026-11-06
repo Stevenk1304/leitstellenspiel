@@ -8,10 +8,10 @@
 
     // FMS-Status → Gruppe
     const GROUPS = [
-        { key: 'free', label: 'Frei', color: '#2ea043', fms: [1, 2] },
-        { key: 'busy', label: 'Im Einsatz', color: '#c9302c', fms: [3, 4, 7, 8, 9] },
-        { key: 'talk', label: 'Sprechwunsch', color: '#e6a23c', fms: [5] },
-        { key: 'off', label: 'Außer Dienst', color: '#6b7280', fms: [6] },
+        { key: 'free', label: 'Frei', short: 'Frei', color: '#2ea043', fms: [1, 2] },
+        { key: 'busy', label: 'Im Einsatz', short: 'Einsatz', color: '#c9302c', fms: [3, 4, 7, 8, 9] },
+        { key: 'talk', label: 'Sprechwunsch', short: 'S5', color: '#e6a23c', fms: [5] },
+        { key: 'off', label: 'Außer Dienst', short: 'S6', color: '#6b7280', fms: [6] },
     ];
     const groupOf = fms => GROUPS.find(g => g.fms.includes(fms))?.key ?? 'free';
 
@@ -22,15 +22,18 @@
         .fu-search { flex:1; min-width:150px; background:#2a2e34; border:1px solid #3a3f47; border-radius:6px; color:#e6e6e6; padding:6px 10px; font-size:13px; }
         .fu-list { overflow:auto; flex:1; }
         .fu-table { width:100%; border-collapse:collapse; font-size:13px; }
-        .fu-table th { position:sticky; top:0; background:#22252a; color:#8b929c; font-weight:600; text-align:right; padding:8px 10px; border-bottom:1px solid #3a3f47; cursor:pointer; user-select:none; white-space:nowrap; }
+        .fu-table th { position:sticky; top:0; background:#22252a; color:#8b929c; font-weight:600; text-align:right; padding:8px 8px; border-bottom:1px solid #3a3f47; cursor:pointer; user-select:none; white-space:nowrap; }
         .fu-table th:first-child, .fu-table td:first-child { text-align:left; padding-left:18px; }
+        .fu-table th:last-child, .fu-table td:last-child { padding-right:18px; }
         .fu-table th.sorted { color:#fff; }
-        .fu-table td { padding:7px 10px; border-bottom:1px solid #2e3238; text-align:right; font-variant-numeric:tabular-nums; }
+        .fu-table td { padding:7px 8px; border-bottom:1px solid #2e3238; text-align:right; font-variant-numeric:tabular-nums; }
+        .fu-table td.fu-type { white-space:nowrap; max-width:220px; overflow:hidden; text-overflow:ellipsis; }
+        @media (max-width: 760px) { .fu-stackcell { display:none; } }
         .fu-table tr:hover td { background:#2a2e34; }
         .fu-type { color:#fff; font-weight:600; }
         .fu-zero { color:#4b5058; }
         .fu-warn { color:#ff8a84; font-weight:600; }
-        .fu-stack { display:flex; height:8px; width:140px; border-radius:4px; overflow:hidden; background:#33373e; margin-left:auto; }
+        .fu-stack { display:flex; height:8px; width:110px; border-radius:4px; overflow:hidden; background:#33373e; margin-left:auto; }
         .fu-total td { font-weight:700; color:#fff; border-top:2px solid #3a3f47; background:#1c1f23; position:sticky; bottom:0; }
     `;
 
@@ -57,10 +60,10 @@
     }
 
     const COLUMNS = [
-        { key: 'name', label: 'Typ' },
-        { key: 'total', label: 'Gesamt' },
-        ...GROUPS.map(g => ({ key: g.key, label: g.label })),
-        { key: 'empty', label: 'Ohne Personal' },
+        { key: 'name', label: 'Typ', title: 'Fahrzeugtyp' },
+        { key: 'total', label: 'Gesamt', title: 'Fahrzeuge gesamt' },
+        ...GROUPS.map(g => ({ key: g.key, label: g.short, title: `${g.label} (Status ${g.fms.join(', ')})` })),
+        { key: 'empty', label: 'Ohne Pers.', title: 'Fahrzeuge ohne zugewiesenes Personal' },
     ];
 
     function renderRows(rows) {
@@ -70,11 +73,11 @@
             r[g.key] ? `<div style="width:${(r[g.key] / r.total) * 100}%;background:${g.color}" title="${g.label}: ${r[g.key]}"></div>` : '').join('')}</div>`;
         return rows.map(r => `
             <tr data-name="${e(r.name.toLowerCase())}">
-                <td class="fu-type">${e(r.name)}</td>
+                <td class="fu-type" title="${e(r.name)}">${e(r.name)}</td>
                 <td>${r.total}</td>
                 ${GROUPS.map(g => cell(r[g.key])).join('')}
                 ${cell(r.empty, true)}
-                <td>${stack(r)}</td>
+                <td class="fu-stackcell">${stack(r)}</td>
             </tr>`).join('');
     }
 
@@ -98,12 +101,12 @@
             count: `${vehicles.length} Fahrzeuge · ${rows.length} Typen`,
             body: `
                 <div class="fu-bar">
-                    ${GROUPS.map(g => `<span class="fu-legend"><i style="background:${g.color}"></i>${g.label}</span>`).join('')}
+                    ${GROUPS.map(g => `<span class="fu-legend"><i style="background:${g.color}"></i>${/^S\d$/.test(g.short) ? `${g.short} ${g.label}` : g.label}</span>`).join('')}
                     <input class="fu-search" type="search" placeholder="Fahrzeugtyp suchen …">
                 </div>
                 <div class="fu-list">
                     <table class="fu-table">
-                        <thead><tr>${COLUMNS.map(c => `<th data-sort="${c.key}">${c.label}</th>`).join('')}<th></th></tr></thead>
+                        <thead><tr>${COLUMNS.map(c => `<th data-sort="${c.key}" title="${c.title}">${c.label}</th>`).join('')}<th class="fu-stackcell"></th></tr></thead>
                         <tbody></tbody>
                         <tfoot class="fu-total">${renderRows([total])}</tfoot>
                     </table>
