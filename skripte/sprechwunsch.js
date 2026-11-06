@@ -1,7 +1,7 @@
 // LSS Sprechwunsch-Helfer
-// Im Fahrzeugfenster mit Sprechwunsch: markiert das beste Ziel (passende Fachabteilung, freie Plätze,
-// kurze Entfernung, wenig Abgabe) und springt nach dem Anfahren auf Wunsch direkt zum nächsten
-// Fahrzeug mit Sprechwunsch. Das Ziel wählt immer der Spieler selbst.
+// Patienten (Fahrzeugfenster) und Gefangene (Alarmfenster): markiert das beste Ziel (passende
+// Fachabteilung, freie Plätze, kurze Entfernung, wenig Abgabe) und springt nach dem Anfahren auf Wunsch
+// direkt zum nächsten Fahrzeug mit Sprechwunsch. Das Ziel wählt immer der Spieler selbst.
 // Wird über tampermonkey-loader.user.js geladen, braucht gemeinsam.js.
 
 (function () {
@@ -105,6 +105,15 @@
         return (await r.json()).filter(v => v.fms_real === 5 && !done.has(String(v.id))).sort((a, b) => a.id - b.id)[0] ?? null;
     }
 
+    // Polizeifahrzeuge geben Gefangene im Alarmfenster ihres Einsatzes ab, alle anderen im Fahrzeugfenster
+    const POLICE_BUILDINGS = [6, 11, 13, 17, 19, 24, 29];
+    async function urlFor(vehicle) {
+        const types = await lss.getVehicleTypes().catch(() => ({}));
+        const police = (types[vehicle.vehicle_type]?.possibleBuildings ?? []).some(b => POLICE_BUILDINGS.includes(b));
+        if (police && vehicle.target_type === 'mission' && vehicle.target_id) return `/missions/${vehicle.target_id}`;
+        return `/vehicles/${vehicle.id}`;
+    }
+
     const setStatus = (box, text) => {
         const el = box.querySelector('.sw-status');
         if (el) el.textContent = text;
@@ -117,65 +126,63 @@
         const r = await fetch(href, { credentials: 'include' });
         if (!r.ok) throw new Error(`Anfahren: HTTP ${r.status}`);
         markDone(vehicleId);
+        // Im Alarmfenster können mehrere Fahrzeuge Gefangene haben: erst die hier erledigen
+        const done = new Set(loadDone().map(d => d.id));
+        const moreHere = [...document.querySelectorAll('.prison-select[data-vehicle-id]')].some(s => !done.has(s.dataset.vehicleId));
+        if (moreHere) {
+            location.reload();
+            return;
+        }
         const next = await nextTalker(vehicleId);
         if (next) {
-            location.href = `/vehicles/${next.id}`;
+            location.href = await urlFor(next);
         } else {
             box.innerHTML = '<div class="sw-done">✔ Alle Sprechwünsche erledigt!</div>';
             setTimeout(() => location.reload(), 1500);
         }
     }
 
-    function init() {
-        const m = location.pathname.match(/^\/vehicles\/(\d+)\/?$/);
-        const heading = document.querySelector('#h2_sprechwunsch');
-        if (!m || !heading) return;
-        const vehicleId = m[1];
-        const list = targets();
-        if (!list.length) return;
-        const choice = best(list);
+    function helperBox({ count, choice, kind, noneText }) {
         const e = lss.escapeHtml;
-        const kind = list[0].link.href.includes('/patient/') ? 'Krankenhaus' : 'Zelle';
-
-        injectStyle();
         const box = document.createElement('div');
         box.className = 'sw-box';
         box.innerHTML = `
-            <div class="sw-head"><b>📻 Sprechwunsch-Helfer</b><span>${list.length} Ziele</span></div>
+            <div class="sw-head"><b>📻 Sprechwunsch-Helfer</b><span>${count} Ziele</span></div>
             ${choice ? `
             <div class="sw-best">
                 <span>⭐</span>
                 <div>
                     <div class="sw-name">${e(choice.name)}${choice.own ? '' : ' <small class="sw-meta">(Verband)</small>'}</div>
                     <div class="sw-meta"><b>${Number.isFinite(choice.dist) ? choice.dist.toLocaleString('de-DE') : '?'} km</b>
-                        ${choice.free != null ? ` · <b>${choice.free} / ${choice.max}</b> frei` : ''}
+                        ${choice.free != null ? ` · <b>${choice.free}${choice.max ? ` / ${choice.max}` : ''}</b> frei` : ''}
                         ${choice.tax ? ` · ${choice.tax} % Abgabe` : ''}
                         ${kind === 'Krankenhaus' ? ' · Fachabteilung ✓' : ''}</div>
                 </div>
                 <a class="sw-go" href="${e(choice.link.getAttribute('href'))}">${kind === 'Krankenhaus' ? '🚑' : '🚔'} Anfahren</a>
-            </div>` : `<div class="sw-none">Kein ${kind === 'Krankenhaus' ? 'Krankenhaus mit passender Fachabteilung und freien Betten' : 'Ziel mit freien Zellen'} gefunden.</div>`}
+            </div>` : `<div class="sw-none">${noneText}</div>`}
             <div class="sw-foot">
                 <label><input type="checkbox" class="sw-auto" ${autoNext() ? 'checked' : ''}> Danach automatisch zum nächsten Sprechwunsch</label>
                 <span class="sw-status" style="margin-left:auto"></span>
             </div>`;
-        (heading.closest('.alert') ?? heading).after(box);
-        choice?.row.classList.add('sw-row-best');
-
         box.querySelector('.sw-auto').addEventListener('change', ev => {
             try { GM_setValue(AUTO_KEY, ev.target.checked); } catch (err) { /* kein Speicher */ }
         });
+        return box;
+    }
 
-        // Jeder Anfahren-Klick (unser Knopf oder einer in den Tabellen) springt danach weiter, wenn eingeschaltet.
-        // Nur ein Anfahren pro Fenster: weitere Klicks während oder nach dem Anfahren werden ignoriert.
+    // Klicks auf Anfahren-Links abfangen, wenn "automatisch weiter" an ist.
+    // vehicleOf(link) liefert das Fahrzeug zum Link; pro Fenster wird nur einmal angefahren.
+    function interceptClicks(selector, vehicleOf, boxOf) {
         let sent = false;
         document.addEventListener('click', ev => {
-            const link = ev.target.closest(`${TARGET_LINK}, .sw-go`);
+            const link = ev.target.closest(selector);
             if (!link || !autoNext()) return;
             ev.preventDefault();
             ev.stopPropagation();
             if (sent) return;
             sent = true;
-            approachAndNext(link.getAttribute('href'), vehicleId, box).catch(err => {
+            const box = boxOf(link);
+            approachAndNext(link.getAttribute('href'), vehicleOf(link), box).catch(err => {
                 sent = false;
                 lss.report('Sprechwunsch-Helfer', err);
                 setStatus(box, 'Fehler, bitte von Hand anfahren');
@@ -183,6 +190,75 @@
         }, true);
     }
 
+    // Fahrzeugfenster: Patient ins Krankenhaus
+    function initVehicle() {
+        const m = location.pathname.match(/^\/vehicles\/(\d+)\/?$/);
+        const heading = document.querySelector('#h2_sprechwunsch');
+        if (!m || !heading) return;
+        const vehicleId = m[1];
+        const list = targets();
+        if (!list.length) return;
+        const choice = best(list);
+        const kind = list[0].link.href.includes('/patient/') ? 'Krankenhaus' : 'Zelle';
+
+        injectStyle();
+        const box = helperBox({
+            count: list.length, choice, kind,
+            noneText: `Kein ${kind === 'Krankenhaus' ? 'Krankenhaus mit passender Fachabteilung und freien Betten' : 'Ziel mit freien Zellen'} gefunden.`,
+        });
+        (heading.closest('.alert') ?? heading).after(box);
+        choice?.row.classList.add('sw-row-best');
+        interceptClicks(`${TARGET_LINK}, .sw-go`, () => vehicleId, () => box);
+    }
+
+    // "Polizeistation Heringen(Freie Zellen: 2, Entfernung: 0,71 km, Abgabe an Besitzer: 0%)"
+    const PRISON_TEXT = /^(.*?)\s*\(\s*Freie Zellen:\s*(\d+)\s*,\s*Entfernung:\s*([\d.,]+)\s*km(?:\s*,\s*Abgabe an Besitzer:\s*(\d+)\s*%)?\s*\)/i;
+
+    // Zellen-Knöpfe eines Fahrzeugs; alles nach der Überschrift "Verbandszellen" gehört dem Verband
+    function prisonTargets(select) {
+        const list = [];
+        let own = true;
+        for (const el of select.children) {
+            if (/^H\d$/.test(el.tagName) && /verband/i.test(el.textContent)) own = false;
+            if (!el.matches('a[data-prison-id]')) continue;
+            const m = el.textContent.replace(/\s+/g, ' ').trim().match(PRISON_TEXT);
+            if (!m) continue;
+            list.push({
+                link: el, row: null, own, dept: true, name: m[1].trim(),
+                free: Number(m[2]), max: null,
+                dist: parseFloat(m[3].replace(',', '.')),
+                tax: Number(m[4] ?? 0),
+            });
+        }
+        return list;
+    }
+
+    // Alarmfenster: Gefangene in eine Zelle (ein Block pro Polizeifahrzeug mit Gefangenen)
+    function initMission() {
+        if (!/^\/missions\/\d+/.test(location.pathname)) return;
+        const selects = [...document.querySelectorAll('.prison-select[data-vehicle-id]')];
+        if (!selects.length) return;
+        injectStyle();
+        for (const select of selects) {
+            const list = prisonTargets(select);
+            if (!list.length) continue;
+            const choice = best(list);
+            const box = helperBox({ count: list.length, choice, kind: 'Zelle', noneText: 'Keine Zelle mit freien Plätzen gefunden.' });
+            box.dataset.vehicleId = select.dataset.vehicleId;
+            select.before(box);
+            if (choice) choice.link.style.outline = '3px solid #2ea043';
+        }
+        interceptClicks(
+            '.prison-select a[data-prison-id], .sw-box[data-vehicle-id] .sw-go',
+            link => link.closest('[data-vehicle-id]').dataset.vehicleId,
+            link => {
+                const id = link.closest('[data-vehicle-id]').dataset.vehicleId;
+                return document.querySelector(`.sw-box[data-vehicle-id="${id}"]`) ?? document.createElement('div');
+            },
+        );
+    }
+
     if (lss.isWorkerFrame) return;
-    lss.safe('Sprechwunsch-Helfer', init)();
+    lss.safe('Sprechwunsch-Helfer', initVehicle)();
+    lss.safe('Sprechwunsch-Helfer (Gefangene)', initMission)();
 })();

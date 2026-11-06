@@ -14,7 +14,7 @@ const FIRST = ['gemeinsam.js', 'themes.js'];
 // Feste Reihenfolge für die bestehenden Werkzeuge; neue Dateien kommen alphabetisch dahinter
 const ORDER = [
     'fahrzeuge-umbenennen.js', 'personal-zuweisen.js', 'wachen-check.js', 'fahrzeug-uebersicht.js',
-    'personal-werben.js', 'auslastung.js', 'einsatz-helfer.js', 'dashboard.js', 'kauf-berater.js',
+    'personal-werben.js', 'auslastung.js', 'einsatz-helfer.js', 'dashboard.js', 'kauf-berater.js', 'sprechwunsch.js',
 ];
 // Brauchen die Liste aller Werkzeuge, deshalb zum Schluss
 const LAST = ['schnellstart.js', 'changelog.js'];

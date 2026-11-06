@@ -10,6 +10,13 @@
     // Neueste zuerst; version muss bei jedem neuen Eintrag größer werden
     const CHANGELOG = [
         {
+            version: 13, date: '06.11.2026', title: 'Sprechwunsch-Helfer für Gefangene',
+            items: [
+                '🚔 Im Alarmfenster: für jeden FuStW mit Gefangenen wird die beste Zelle markiert (freie Zellen, Entfernung, Abgabe)',
+                '⏭ Automatisch weiter: erst alle Gefangenen im selben Einsatz, dann zum nächsten Sprechwunsch – Polizei ins Alarmfenster, Rettungsdienst ins Fahrzeugfenster',
+            ],
+        },
+        {
             version: 12, date: '06.11.2026', title: 'Fehlerbehebungen',
             items: [
                 '📻 Sprechwunsch-Helfer: kein Fehler mehr nach dem letzten Sprechwunsch, das Fenster lädt danach neu',
