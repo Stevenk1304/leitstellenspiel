@@ -144,6 +144,11 @@
         .eh-chance { color:#e6a23c; font-size:11px; margin-left:4px; }
         .eh-info { display:flex; flex-wrap:wrap; gap:6px 16px; padding:8px 12px; color:#aab0b8; border-top:1px solid #3a3f47; background:#1c1f23; }
         .eh-info b { color:#fff; }
+        .eh-actions { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:8px 12px; border-top:1px solid #3a3f47; }
+        .eh-pick { background:#2ea043; color:#fff; border:0; border-radius:6px; padding:6px 14px; font-weight:600; cursor:pointer; }
+        .eh-pick:hover { filter:brightness(1.15); }
+        .eh-msg { color:#aab0b8; }
+        .eh-msg b { color:#fff; }
     `;
 
     function injectStyle(doc) {
@@ -204,22 +209,45 @@
         return candidates.find(k => missions[k]) ?? null;
     }
 
-    // Angehakte Fahrzeuge in den Fahrzeuglisten des Alarmfensters. Ein Fahrzeug kann in mehreren
-    // Reitern (z.B. "Alle" und "Feuerwehr") stehen, deshalb nach Fahrzeug-ID entdoppeln.
+    // "1,3 km" → 1.3, "05:12" → 312; Hauptsache, kleiner heißt näher. Unlesbar → ganz hinten
+    function parseDistance(text) {
+        const time = text.match(/(\d+):(\d{2})/);
+        if (time) return Number(time[1]) * 60 + Number(time[2]);
+        const num = text.match(/(\d+(?:[.,]\d+)?)/);
+        return num ? Number(num[1].replace(',', '.')) : Infinity;
+    }
+
+    // Alle Fahrzeuge in den Fahrzeuglisten des Alarmfensters, nächstes zuerst. Ein Fahrzeug kann in
+    // mehreren Reitern (z.B. "Alle" und "Feuerwehr") stehen, deshalb nach Fahrzeug-ID entdoppeln.
     // ownVehicles: Fahrzeugdaten aus /api/vehicles, falls die Seite den Typ nicht direkt angibt
-    function selectedVehicles(ownVehicles) {
+    function alarmList(ownVehicles) {
         const found = new Map();
-        document.querySelectorAll('input[type="checkbox"]:checked').forEach(input => {
+        const distCol = new Map();
+        document.querySelectorAll('input[type="checkbox"]').forEach(input => {
             const row = input.closest('tr');
-            if (!input.classList.contains('vehicle_checkbox') && !row?.closest('table[id^="vehicle_show_table"]')) return;
+            const table = row?.closest('table');
+            if (!input.classList.contains('vehicle_checkbox') && !table?.id.startsWith('vehicle_show_table')) return;
             const id = [input.value, input.getAttribute('vehicle_id'), row?.id?.match(/\d+/)?.[0]].find(v => /^\d+$/.test(v ?? ''));
             const typeAttr = input.getAttribute('vehicle_type_id') ?? row?.querySelector('[vehicle_type_id]')?.getAttribute('vehicle_type_id');
             const type = typeAttr != null ? Number(typeAttr) : ownVehicles?.[id]?.vehicle_type;
             if (type == null || Number.isNaN(type)) return;
-            found.set(id ?? `${type}-${found.size}`, { id, type });
+            const key = id ?? `${type}-${found.size}`;
+            // Steht das Fahrzeug schon in einem anderen Reiter, zählt nur, ob es irgendwo angehakt ist
+            if (found.has(key)) {
+                if (input.checked) found.get(key).checked = true;
+                return;
+            }
+            if (table && !distCol.has(table)) {
+                distCol.set(table, [...table.querySelectorAll('thead th')].findIndex(th => /entfernung/i.test(th.textContent)));
+            }
+            const col = table ? distCol.get(table) : -1;
+            const dist = col >= 0 ? parseDistance(row.cells[col]?.textContent ?? '') : Infinity;
+            found.set(key, { id, type, input, checked: input.checked, dist });
         });
-        return [...found.values()];
+        return [...found.values()].sort((a, b) => a.dist - b.dist);
     }
+
+    const selectedVehicles = ownVehicles => alarmList(ownVehicles).filter(v => v.checked);
 
     // Fahrzeugtypen zählen: vor Ort, auf Anfahrt und im Alarmfenster angehakt
     function countVehicles(selected) {
@@ -286,14 +314,14 @@
             if (key === 'water_needed' || key === 'foam_needed') {
                 const field = key === 'water_needed' ? 'waterTank' : 'foamTank';
                 rows.push({
-                    label: key === 'water_needed' ? 'Wasser (Liter)' : 'Schaum (Liter)', needed, chance: null,
+                    label: key === 'water_needed' ? 'Wasser (Liter)' : 'Schaum (Liter)', needed, chance: null, tank: field,
                     scene: tankFor(counts.scene, types, field), driving: tankFor(counts.driving, types, field), selected: tankFor(counts.selected, types, field),
                 });
                 continue;
             }
             const [label, typeIds] = REQ[key] ?? [key, []];
             rows.push({
-                label, needed, chance: m.chances[key] ?? null, unknown: !typeIds.length,
+                label, needed, chance: m.chances[key] ?? null, unknown: !typeIds.length, typeIds,
                 scene: sumFor(counts.scene, typeIds), driving: sumFor(counts.driving, typeIds), selected: sumFor(counts.selected, typeIds),
             });
         }
@@ -309,7 +337,7 @@
         // Mindestpersonal; angehakte Fahrzeuge mit ihrer zugewiesenen Besatzung (falls bekannt)
         for (const [org, needed] of Object.entries(m.personnel ?? {})) {
             rows.push({
-                label: ORGS[org].label, needed, chance: null,
+                label: ORGS[org].label, needed, chance: null, org,
                 scene: crewFor(counts.crewScene ?? {}, org, m.inclusions ?? {}),
                 driving: crewFor(counts.crewDriving ?? {}, org, m.inclusions ?? {}),
                 selected: counts.crewSelected ? crewFor(counts.crewSelected, org, m.inclusions ?? {}) : null,
@@ -320,7 +348,41 @@
         return rows.sort((a, b) => (b.missing > 0) - (a.missing > 0) || (a.chance != null) - (b.chance != null) || b.needed - a.needed);
     }
 
-    function render(box, m, rows, collapsed) {
+    // Hakt für jede sicher fehlende Anforderung das nächste passende, noch nicht gewählte Fahrzeug an.
+    // Alarmiert wird nichts, das bleibt beim Spieler. computeRows liefert die Zeilen zum aktuellen Stand.
+    function pickMissing(m, types, ownVehicles, computeRows) {
+        const picked = [];
+        const fits = (r, v) => {
+            if (r.typeIds) return r.typeIds.includes(v.type);
+            if (r.tank) return (types[v.type]?.[r.tank] || 0) > 0;
+            if (r.org) {
+                const org = orgOf(types[v.type]);
+                const allowed = org === r.org || m.inclusions?.[org]?.includes(r.org);
+                return allowed && (ownVehicles?.[v.id]?.assigned_personnel_count ?? 0) > 0;
+            }
+            return false;
+        };
+        // Fahrzeug-Anforderungen zuerst, dann Wasser/Schaum, dann Personal: Fahrzeuge bringen oft beides mit
+        const order = r => (r.typeIds ? 0 : r.tank ? 1 : 2);
+        for (let guard = 0; guard < 80; guard++) {
+            const open = computeRows()
+                .filter(r => r.missing > 0 && r.chance == null && !r.unknown && (r.typeIds || r.tank || r.org))
+                .sort((a, b) => order(a) - order(b));
+            const free = alarmList(ownVehicles).filter(v => !v.checked);
+            let choice = null;
+            for (const r of open) {
+                choice = free.find(v => fits(r, v));
+                if (choice) break;
+            }
+            if (!choice) break;
+            choice.input.click();
+            picked.push(choice);
+        }
+        const stillMissing = computeRows().filter(r => r.missing > 0 && r.chance == null);
+        return { picked: picked.length, stillMissing };
+    }
+
+    function render(box, m, rows, collapsed, pickMsg) {
         const e = lss.escapeHtml;
         const fmt = n => n.toLocaleString('de-DE');
         const num = n => n ? fmt(n) : '<span class="eh-zero">0</span>';
@@ -360,6 +422,11 @@
                         </tr>`).join('')}
                     </tbody>
                 </table>` : '<div class="eh-info">Keine besonderen Anforderungen: ein passendes Fahrzeug reicht.</div>'}
+                ${missingCount || pickMsg ? `
+                <div class="eh-actions">
+                    ${missingCount ? '<button type="button" class="eh-pick">✓ Fehlendes auswählen</button>' : ''}
+                    ${pickMsg ? `<span class="eh-msg">${pickMsg}</span>` : ''}
+                </div>` : ''}
                 ${info.length ? `<div class="eh-info">${info.map(i => `<span>${i}</span>`).join('')}</div>` : ''}
             </div>`;
     }
@@ -393,16 +460,21 @@
             .catch(e => console.warn('Einsatz-Helfer: Fahrzeugdaten nicht geladen', e));
 
         let lastState = '';
-        const update = () => {
+        let pickMsg = '';
+        let picking = false;
+        const computeRows = () => {
             const selected = selectedVehicles(ownVehicles);
-            const counts = {
+            return buildRows(m, {
                 ...countVehicles(selected),
                 crewScene: countCrew('mission_vehicle_at_mission', types),
                 crewDriving: countCrew('mission_vehicle_driving', types),
                 crewSelected: crewOfSelected(selected, ownVehicles, types),
-            };
+            }, types);
+        };
+        const update = () => {
+            if (picking) return;
             lastState = state();
-            render(box, m, buildRows(m, counts, types), collapsed);
+            render(box, m, computeRows(), collapsed, pickMsg);
         };
         // Kurzer Fingerabdruck von Auswahl und Fahrzeuglisten, um Änderungen zu erkennen
         const state = () => [
@@ -411,6 +483,22 @@
             ownVehicles ? 1 : 0,
         ].join('|');
         box.addEventListener('click', e => {
+            if (e.target.closest('.eh-pick')) {
+                picking = true;
+                let result;
+                try {
+                    result = pickMissing(m, types, ownVehicles, computeRows);
+                } finally {
+                    picking = false;
+                }
+                const e2 = lss.escapeHtml;
+                const rest = result.stillMissing.map(r => e2(r.label));
+                pickMsg = result.picked
+                    ? `<b>${result.picked}</b> Fahrzeug${result.picked === 1 ? '' : 'e'} ausgewählt. Alarmieren musst du selbst.${rest.length ? ` Kein freies Fahrzeug für: ${rest.join(', ')}` : ''}`
+                    : `Kein passendes freies Fahrzeug in der Liste${rest.length ? ` für: ${rest.join(', ')}` : ''}.`;
+                update();
+                return;
+            }
             if (!e.target.closest('.eh-head')) return;
             collapsed = !collapsed;
             try { localStorage.setItem('einsatzHelfer.collapsed', collapsed ? '1' : '0'); } catch (err) { /* kein Speicher */ }

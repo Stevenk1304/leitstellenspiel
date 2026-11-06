@@ -11,7 +11,8 @@ Eigene Tampermonkey-Skripte für leitstellenspiel.de.
 | `skripte/fahrzeug-uebersicht.js` | Fahrzeuge pro Typ: gesamt, frei, im Einsatz, Sprechwunsch, außer Dienst, ohne Personal |
 | `skripte/personal-werben.js` | Personalwerbung (längste Phase, nie Coins) an Wachen mit Personalmangel starten |
 | `skripte/auslastung.js` | Belegung der Krankenhäuser und Zellen |
-| `skripte/einsatz-helfer.js` | Im Alarmfenster: was der Einsatz braucht, was da ist und was fehlt |
+| `skripte/einsatz-helfer.js` | Im Alarmfenster: was der Einsatz braucht, was da ist und was fehlt; „Fehlendes auswählen“ hakt die nächsten passenden Fahrzeuge an |
+| `skripte/dashboard.js` | Alle wichtigen Zahlen auf einen Blick, mit Schnellzugriff auf die Werkzeuge |
 
 Alle Funktionen stehen im Menü **🛠 Werkzeuge** oben in der Spiel-Leiste. Ist gerade eine Wache offen
 (auch im Popup), stehen oben die Einträge für diese Wache, darunter die für alle Wachen.

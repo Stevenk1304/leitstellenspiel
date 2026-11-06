@@ -215,6 +215,7 @@
     }
 
     lss.actions.check = start;
+    lss.actions.checkResults = collect;
 
     if (lss.isWorkerFrame) return;
 
