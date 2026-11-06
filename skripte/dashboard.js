@@ -20,7 +20,7 @@
         .db-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:10px; }
         .db-tile { background:#2a2e34; border:1px solid #3a3f47; border-radius:8px; padding:10px 14px; min-width:0; }
         .db-tile.click { cursor:pointer; transition:border-color .15s; }
-        .db-tile.click:hover { border-color:#c9302c; }
+        .db-tile.click:hover { border-color:var(--lssr-accent,#c9302c); }
         .db-label { color:#8b929c; font-size:12px; }
         .db-value { color:#fff; font-size:24px; font-weight:700; font-variant-numeric:tabular-nums; line-height:1.25; }
         .db-value.db-small { font-size:17px; padding:4px 0; }

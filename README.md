@@ -13,6 +13,10 @@ Eigene Tampermonkey-Skripte für leitstellenspiel.de.
 | `skripte/auslastung.js` | Belegung der Krankenhäuser und Zellen |
 | `skripte/einsatz-helfer.js` | Im Alarmfenster: was der Einsatz braucht, was da ist und was fehlt; „Fehlendes auswählen“ hakt die nächsten passenden Fahrzeuge an |
 | `skripte/dashboard.js` | Alle wichtigen Zahlen auf einen Blick, mit Schnellzugriff auf die Werkzeuge |
+| `skripte/sprechwunsch.js` | 📻 Bestes Krankenhaus/Zelle bei Sprechwünschen markieren, danach automatisch zum nächsten |
+| `skripte/themes.js` | 🎨 Farbschema für alle Werkzeuge |
+| `skripte/schnellstart.js` | ⭐ Lieblingswerkzeuge als Symbole in der Spiel-Leiste |
+| `skripte/changelog.js` | 📰 „Was ist neu?“ und Hinweis nach Updates |
 | `skripte/kauf-berater.js` | „Was soll ich kaufen?“: merkt sich Einsätze und Engpässe der letzten 14 Tage und empfiehlt Fahrzeuge |
 
 Alle Funktionen stehen im Menü **🛠 Werkzeuge** oben in der Spiel-Leiste. Ist gerade eine Wache offen
@@ -24,8 +28,14 @@ Alle Funktionen stehen im Menü **🛠 Werkzeuge** oben in der Spiel-Leiste. Ist
 2. In Tampermonkey ein neues Userscript erstellen, den Inhalt von `tampermonkey-loader.user.js` einfügen und speichern.
 3. Die einzeln installierte Version von „LSS Fahrzeuge umbenennen“ in Tampermonkey löschen.
 
-Danach werden die Dateien in `skripte/` bei jedem Laden von Leitstellenspiel frisch gelesen.
-Änderungen sind nach **Strg + F5** aktiv.
+Das Lade-Skript lädt nur `dist/lss-skripte.js`. Diese Datei wird mit
 
-Nur wenn ein **neues Skript** dazukommt, muss das Lade-Skript in Tampermonkey einmal neu eingefügt werden
-(neue `@require`-Zeile).
+```bash
+node build.js
+```
+
+aus allen Dateien in `skripte/` zusammengesetzt (neue Dateien werden automatisch mitgenommen) und dabei
+auf Syntaxfehler geprüft. Nach jeder Änderung an `skripte/` also `node build.js` ausführen, dann ist
+die Änderung nach **Strg + F5** im Spiel aktiv. Das Lade-Skript muss nicht mehr geändert werden.
+
+`dist/lss-skripte.js` nie von Hand bearbeiten, Änderungen gehören nach `skripte/`.

@@ -49,10 +49,22 @@ const lss = (() => {
     const readLog = () => { try { return GM_getValue(LOG_KEY, []); } catch (e) { return []; } };
     const clearLog = () => { try { GM_setValue(LOG_KEY, []); } catch (e) { /* kein Speicher */ } };
 
-    // Lokale Pfade aus dem Stack entfernen, damit nur "skripte/datei.js:zeile" übrig bleibt
+    // Zeile in dist/lss-skripte.js → "skripte/datei.js:zeile" (Startzeilen schreibt build.js ans Dateiende)
+    function sourceLine(bundleLine) {
+        const files = typeof LSS_BUILD !== 'undefined' ? LSS_BUILD.files : null;
+        if (!files) return `dist/lss-skripte.js:${bundleLine}`;
+        const hit = files.filter(([, start]) => start <= bundleLine).pop();
+        return hit ? `skripte/${hit[0]}:${bundleLine - hit[1] + 1}` : `dist/lss-skripte.js:${bundleLine}`;
+    }
+
+    // Lokale und Tampermonkey-Pfade aus dem Stack entfernen; Tampermonkey zählt eine Zeile mehr als die Datei
     const cleanStack = stack => String(stack ?? '')
         .split('\n').slice(0, 6)
-        .map(l => l.replace(/file:\/\/\/\S*?\/skripte\//g, 'skripte/').trim())
+        .map(l => l
+            .replace(/chrome-extension:\/\/\S*?userscript\.html\?\S*?:(\d+):(\d+)/g, (_, ln, col) => `${sourceLine(Number(ln) - 1)}:${col}`)
+            .replace(/file:\/\/\/\S*?\/dist\/lss-skripte\.js:(\d+):(\d+)/g, (_, ln, col) => `${sourceLine(Number(ln))}:${col}`)
+            .replace(/file:\/\/\/\S*?\/leitstellenspiel\//g, '')
+            .trim())
         .join('\n');
 
     function formatReport(entries) {
@@ -146,7 +158,7 @@ const lss = (() => {
     };
 
     // Unbehandelte Fehler, deren Stack auf eines der eigenen Skripte zeigt
-    const ours = stack => /skripte\/|LSS Skripte/.test(String(stack ?? ''));
+    const ours = stack => /lss-skripte\.js|skripte\/|LSS-Skripte|LSS Skripte/.test(String(stack ?? ''));
     window.addEventListener('error', e => { if (ours(e.error?.stack ?? e.filename)) report('Unbekannt', e.error ?? e.message); });
     window.addEventListener('unhandledrejection', e => { if (ours(e.reason?.stack)) report('Unbekannt', e.reason); });
 
@@ -155,7 +167,7 @@ const lss = (() => {
             background:rgba(0,0,0,.65); backdrop-filter:blur(2px); font-family:"Helvetica Neue",Arial,sans-serif; animation:lssr-fade .15s ease-out; }
         .lssr-dialog { width:min(640px,94vw); max-height:86vh; display:flex; flex-direction:column; overflow:hidden;
             background:#22252a; color:#e6e6e6; border:1px solid #3a3f47; border-radius:10px; box-shadow:0 20px 60px rgba(0,0,0,.6); }
-        .lssr-head { display:flex; align-items:center; gap:10px; padding:14px 18px; background:linear-gradient(135deg,#c9302c,#8f1f1c); color:#fff; }
+        .lssr-head { display:flex; align-items:center; gap:10px; padding:14px 18px; background:linear-gradient(135deg,var(--lssr-accent,#c9302c),var(--lssr-accent-dark,#8f1f1c)); color:#fff; }
         .lssr-head h3 { margin:0; font-size:17px; font-weight:600; flex:1; }
         .lssr-count { background:rgba(255,255,255,.2); border-radius:999px; padding:2px 10px; font-size:13px; font-weight:600; }
         .lssr-x { background:none; border:0; color:#fff; font-size:22px; line-height:1; cursor:pointer; opacity:.8; padding:0 2px; }
@@ -166,10 +178,10 @@ const lss = (() => {
         .lssr-row:last-child { border-bottom:0; }
         .lssr-row:hover { background:#2a2e34; }
         .lssr-old { color:#8b929c; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-        .lssr-arrow { color:#c9302c; text-align:center; font-weight:700; }
+        .lssr-arrow { color:var(--lssr-accent,#c9302c); text-align:center; font-weight:700; }
         .lssr-new { color:#fff; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .lssr-state { min-width:22px; height:22px; padding:0 4px; box-sizing:border-box; border-radius:999px; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; }
-        .lssr-row.busy .lssr-state { width:22px; border:2px solid #555; border-top-color:#c9302c; animation:lssr-spin .7s linear infinite; }
+        .lssr-row.busy .lssr-state { width:22px; border:2px solid #555; border-top-color:var(--lssr-accent,#c9302c); animation:lssr-spin .7s linear infinite; }
         .lssr-row.ok { background:rgba(46,160,67,.08); }
         .lssr-row.ok .lssr-state { background:#2ea043; color:#fff; }
         .lssr-row.skip .lssr-state { background:#3a3f47; color:#aab0b8; }
@@ -178,7 +190,7 @@ const lss = (() => {
         .lssr-empty { padding:30px 18px; text-align:center; color:#8b929c; }
         .lssr-foot { padding:12px 18px 16px; border-top:1px solid #3a3f47; background:#1c1f23; }
         .lssr-bar { height:6px; background:#33373e; border-radius:999px; overflow:hidden; margin-bottom:10px; display:none; }
-        .lssr-bar > div { height:100%; width:0; background:linear-gradient(90deg,#c9302c,#e8584f); transition:width .25s; }
+        .lssr-bar > div { height:100%; width:0; background:linear-gradient(90deg,var(--lssr-accent,#c9302c),var(--lssr-accent-light,#e8584f)); transition:width .25s; }
         .lssr-status { font-size:13px; color:#aab0b8; min-height:18px; margin-bottom:12px; }
         .lssr-status.done { color:#5cd178; font-weight:600; }
         .lssr-actions { display:flex; gap:8px; justify-content:flex-end; }
@@ -186,7 +198,7 @@ const lss = (() => {
         .lssr-btn:hover:not(:disabled) { filter:brightness(1.15); }
         .lssr-btn:disabled { opacity:.45; cursor:default; }
         .lssr-btn-ghost { background:#33373e; color:#e6e6e6; }
-        .lssr-btn-primary { background:#c9302c; color:#fff; }
+        .lssr-btn-primary { background:var(--lssr-accent,#c9302c); color:#fff; }
         @keyframes lssr-spin { to { transform:rotate(360deg); } }
         @keyframes lssr-fade { from { opacity:0; } }
     `;
@@ -453,5 +465,12 @@ const lss = (() => {
 
     addTool({ label: '🐞 Fehlerprotokoll', scope: 'all', order: 99, run: showLog });
 
-    return { sleep, csrfToken, getJSON, getVehicleTypes, escapeHtml, isWorkerFrame, openDialog, openPanel, addPageButton, addTool, actions, report, safe };
+    // Für die Schnellstart-Leiste: alle Werkzeuge und der Menüpunkt in der Spiel-Leiste
+    const listTools = () => [...tools].sort((a, b) => a.order - b.order);
+    const navMenuItem = () => navItem ?? null;
+
+    return {
+        sleep, csrfToken, getJSON, getVehicleTypes, escapeHtml, isWorkerFrame, openDialog, openPanel, addPageButton,
+        addTool, listTools, navMenuItem, currentBuilding, injectStyle, actions, report, safe,
+    };
 })();

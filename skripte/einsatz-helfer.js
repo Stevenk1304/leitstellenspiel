@@ -7,7 +7,7 @@
     'use strict';
 
     // Bei Änderungen am gespeicherten Format die Nummer erhöhen, damit neu geladen wird
-    const CACHE_KEY = 'einsatzHelfer.missions.v2';
+    const CACHE_KEY = 'einsatzHelfer.missions.v3';
     const CACHE_HOURS = 24;
 
     // Fahrzeuggruppen (Typ-Nummern aus der LSSM-API). Nach bestem Wissen zugeordnet;
@@ -126,7 +126,7 @@
 
     const STYLE = `
         .eh-box { margin:10px 0; background:#22252a; color:#e6e6e6; border:1px solid #3a3f47; border-radius:8px; overflow:hidden; font-size:13px; }
-        .eh-head { display:flex; align-items:center; gap:10px; padding:8px 12px; background:linear-gradient(135deg,#c9302c,#8f1f1c); color:#fff; cursor:pointer; user-select:none; }
+        .eh-head { display:flex; align-items:center; gap:10px; padding:8px 12px; background:linear-gradient(135deg,var(--lssr-accent,#c9302c),var(--lssr-accent-dark,#8f1f1c)); color:#fff; cursor:pointer; user-select:none; }
         .eh-head b { flex:1; font-size:14px; }
         .eh-pill { background:rgba(255,255,255,.2); border-radius:999px; padding:1px 9px; font-size:12px; font-weight:600; white-space:nowrap; }
         .eh-pill.ok { background:#2ea043; } .eh-pill.miss { background:#fff; color:#c9302c; }
@@ -179,6 +179,8 @@
                     educations: m.additional?.personnel_educations,
                     followup: (m.additional?.followup_missions_ids?.length || 0) + (m.additional?.subsequent_missions_ids?.length || 0),
                     ktwInsteadOfRtw: m.additional?.allow_ktw_instead_of_rtw,
+                    ktwBInsteadOfRtw: m.additional?.allow_ktw_b_instead_of_rtw,
+                    specializations: m.additional?.patient_specializations,
                 },
                 personnel: Object.fromEntries(Object.keys(ORGS)
                     .map(o => [o, m.additional?.[`average_min_${o}_personnel`]])
@@ -210,11 +212,21 @@
     }
 
     // "1,3 km" → 1.3, "05:12" → 312; Hauptsache, kleiner heißt näher. Unlesbar → ganz hinten
+    // "01 Min. 22 Sek." → 82, "1 Std. 5 Min." → 3900, "05:12" → 312, "1,3 km" → 1.3.
+    // Hauptsache, kleiner heißt näher. Unlesbar → ganz hinten
     function parseDistance(text) {
+        const unit = re => Number(text.match(re)?.[1] ?? 0);
+        if (/min|sek|std/i.test(text)) return unit(/(\d+)\s*Std/i) * 3600 + unit(/(\d+)\s*Min/i) * 60 + unit(/(\d+)\s*Sek/i);
         const time = text.match(/(\d+):(\d{2})/);
         if (time) return Number(time[1]) * 60 + Number(time[2]);
         const num = text.match(/(\d+(?:[.,]\d+)?)/);
         return num ? Number(num[1].replace(',', '.')) : Infinity;
+    }
+
+    // "1 Patienten - 1 unbehandelte Patienten" im Alarmfenster; null, wenn keine Angabe zu finden ist
+    function patientsOnPage() {
+        const m = document.body.textContent.match(/(\d+)\s+Patienten?\s*-\s*\d+\s+unbehandelte/i);
+        return m ? Number(m[1]) : null;
     }
 
     // Alle Fahrzeuge in den Fahrzeuglisten des Alarmfensters, nächstes zuerst. Ein Fahrzeug kann in
@@ -325,9 +337,20 @@
                 scene: sumFor(counts.scene, typeIds), driving: sumFor(counts.driving, typeIds), selected: sumFor(counts.selected, typeIds),
             });
         }
-        // Fahrzeuge, die nur mit Wahrscheinlichkeit gebraucht werden, aber nicht in den festen Anforderungen stehen
+        // Patienten brauchen je einen RTW (oder KTW, wo das Spiel es erlaubt), sofern der Einsatz nicht
+        // ohnehin feste RTW verlangt. Zahl aus dem Alarmfenster, sonst die Mindestzahl aus den Spieldaten.
+        const patients = counts.patients ?? m.add.patientsMin ?? 0;
+        if (patients > 0 && !('ambulances' in m.req)) {
+            const typeIds = [...REQ.ambulances[1], ...(m.add.ktwInsteadOfRtw ? [38] : []), ...(m.add.ktwBInsteadOfRtw ? [58] : [])];
+            rows.push({
+                key: 'ambulances', label: `RTW (${patients} Patient${patients === 1 ? '' : 'en'})`, needed: patients, chance: null, typeIds,
+                scene: sumFor(counts.scene, typeIds), driving: sumFor(counts.driving, typeIds), selected: sumFor(counts.selected, typeIds),
+            });
+        }
+        // Fahrzeuge, die nur mit Wahrscheinlichkeit gebraucht werden, aber nicht in den festen Anforderungen stehen.
+        // Transport-Wahrscheinlichkeiten sind kein Fahrzeug, die stehen unten in der Infozeile.
         for (const [key, chance] of Object.entries(m.chances)) {
-            if (key in m.req) continue;
+            if (key in m.req || key === 'patient_transport' || key === 'patient_other_treatment') continue;
             const [label, typeIds] = REQ[key] ?? [key, []];
             rows.push({
                 label, needed: 1, chance, unknown: !typeIds.length,
@@ -391,7 +414,10 @@
         const info = [
             m.credits ? `💰 <b>~${fmt(m.credits)}</b> Credits` : '',
             m.add.patients ? `🚑 bis zu <b>${m.add.patients}</b> Patienten${m.add.patientsMin ? ` (mind. ${m.add.patientsMin})` : ''}` : '',
-            m.add.ktwInsteadOfRtw ? 'KTW statt RTW möglich' : '',
+            m.add.ktwInsteadOfRtw || m.add.ktwBInsteadOfRtw ? 'KTW statt RTW möglich' : '',
+            m.chances.patient_transport != null || m.add.specializations
+                ? `🏥 ${m.chances.patient_transport != null ? `Transport zu <b>${m.chances.patient_transport} %</b>` : 'Transport'}${m.add.specializations ? ` · ${e(m.add.specializations)}` : ''}`
+                : '',
             m.add.prisoners ? `🚔 bis zu <b>${m.add.prisoners}</b> Gefangene` : '',
             m.add.duration ? `⏱ ${e(m.add.duration)}` : '',
             m.add.educations ? `🎓 ${Object.entries(m.add.educations).map(([k, n]) => `${n}× ${e(k)}`).join(', ')}` : '',
@@ -472,6 +498,7 @@
                 crewScene: countCrew('mission_vehicle_at_mission', types),
                 crewDriving: countCrew('mission_vehicle_driving', types),
                 crewSelected: crewOfSelected(selected, ownVehicles, types),
+                patients: patientsOnPage(),
             }, types);
         };
         const update = () => {
