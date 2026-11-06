@@ -101,6 +101,7 @@
             meta: crewed.length ? `${vehicles.length} Fahrzeuge · ${assigned}/${needMax} Plätze besetzt · ${staff} Personal` : `${staff} Personal`,
             canRename: wrongNames.length > 0,
             canAssign: (empty.length || under.length) && staff > assigned,
+            canHire: crewed.length > 0 && staff < needMax && !hiring,
         };
     }
 
@@ -133,6 +134,7 @@
             : '<div class="wc-okline">✔ Alles in Ordnung</div>';
         const actions = [
             r.canAssign && lss.actions.assign ? `<button class="lssr-btn lssr-btn-primary" data-assign="${r.b.id}">👥 Personal zuweisen</button>` : '',
+            r.canHire && lss.actions.hire ? `<button class="lssr-btn lssr-btn-ghost" data-hire="${r.b.id}">📣 Werbung starten</button>` : '',
             r.canRename && lss.actions.rename ? `<button class="lssr-btn lssr-btn-ghost" data-rename="${r.b.id}">✎ Umbenennen</button>` : '',
         ].join('');
         return `
@@ -157,6 +159,7 @@
         injectStyle();
         const count = level => results.filter(r => r.level === level).length;
         const single = buildingId !== null;
+        const hireIds = results.filter(r => r.canHire).map(r => r.b.id);
         const panel = lss.openPanel({
             title: single ? `Wachen-Check: ${results[0]?.b.caption ?? ''}` : 'Wachen-Check',
             count: `${results.length} Wache${results.length === 1 ? '' : 'n'}`,
@@ -167,6 +170,7 @@
                     <span class="wc-stat warn active" data-filter="warn">● ${count('warn')} mit Warnungen</span>
                     <span class="wc-stat ok" data-filter="ok">● ${count('ok')} in Ordnung</span>
                     <input class="wc-search" type="search" placeholder="Wache suchen …">
+                    ${hireIds.length && lss.actions.hire ? `<button class="lssr-btn lssr-btn-primary wc-hire-all">📣 Werbung an ${hireIds.length} Wache${hireIds.length === 1 ? '' : 'n'} starten</button>` : ''}
                 </div>`}
                 <div class="wc-list">
                     ${results.map(renderCard).join('')}
@@ -200,7 +204,10 @@
         root.addEventListener('click', e => {
             const assign = e.target.closest('[data-assign]');
             const rename = e.target.closest('[data-rename]');
-            if (assign) lss.actions.assign(Number(assign.dataset.assign));
+            const hire = e.target.closest('[data-hire]');
+            if (e.target.closest('.wc-hire-all')) lss.actions.hire(hireIds);
+            else if (hire) lss.actions.hire([Number(hire.dataset.hire)]);
+            else if (assign) lss.actions.assign(Number(assign.dataset.assign));
             else if (rename) lss.actions.rename(Number(rename.dataset.rename));
             // Wache öffnen: Check schließen, damit das Fenster des Spiels sichtbar ist
             else if (e.target.closest('.wc-name')) panel.close();
