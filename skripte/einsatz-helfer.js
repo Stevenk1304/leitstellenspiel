@@ -226,12 +226,16 @@
     // Patientenzahl im Alarmfenster; null, wenn keine Angabe zu finden ist.
     // 1. Patienten-Kärtchen zählen, 2. Text "3 Patienten - 2 unbehandelte", 3. Überschrift "3 Patienten".
     // Der Text unseres eigenen Kastens ("bis zu 3 Patienten") wird dabei nicht mitgelesen.
+    // Die Patienten-Kärtchen im Alarmfenster (ohne verschachtelte Doppel-Treffer)
+    function patientCards() {
+        return [...document.querySelectorAll('.mission_patient, div[id^="patient_"]')]
+            .filter(el => !el.closest('.eh-box') && (el.classList.contains('mission_patient') || /^patient_\d+$/.test(el.id)))
+            .filter((el, _, all) => !all.some(o => o !== el && o.contains(el)));
+    }
+
     function patientsOnPage() {
         const own = el => el.closest('.eh-box');
-        const cards = [...document.querySelectorAll('.mission_patient, div[id^="patient_"]')]
-            .filter(el => !own(el) && (el.classList.contains('mission_patient') || /^patient_\d+$/.test(el.id)))
-            // Verschachtelte Treffer (Kärtchen in Kärtchen) nur einmal zählen
-            .filter((el, _, all) => !all.some(o => o !== el && o.contains(el)));
+        const cards = patientCards();
         if (cards.length) return cards.length;
         const texts = [...document.querySelectorAll('h1,h2,h3,h4,h5,h6,small,span,div,p')]
             .filter(el => !own(el) && el.children.length <= 3 && el.textContent.length < 120 && /Patient/i.test(el.textContent))
@@ -264,28 +268,42 @@
     // eigenes Fahrzeug; sonst reicht eines für alle (z.B. ein LNA für den ganzen Einsatz).
     const PATIENT_NEEDS = [
         { re: /\bRTW\b/, label: 'RTW', typeIds: [28, 73, 74], perPatient: true },
-        { re: /\bNEF\b|Notarzt/i, label: 'NEF', typeIds: [29, 74, 31, 149], perPatient: true },
+        { re: /\bNEF\b|(?<!Leitende[rn]? )Notarzt/i, label: 'NEF', typeIds: [29, 74, 31, 149], perPatient: true },
         { re: /\bRTH\b|Hubschrauber/i, label: 'RTH', typeIds: [31, 157], perPatient: true },
         { re: /\bLNA\b|Leitende[rn]? Notarzt/i, label: 'LNA', typeIds: [55], perPatient: false },
         { re: /\bOrgL\b|Organisatorische[rn]? Leiter/i, label: 'OrgL', typeIds: [56], perPatient: false },
     ];
 
-    // { label: Anzahl Patienten, die es verlangen }; unbekannte Wünsche unter ihrem Text
+    // { label: Anzahl Patienten, die es verlangen }; unbekannte Wünsche unter ihrem Text.
+    // Gezählt wird pro Patient (jedes Kärtchen höchstens einmal je Wunsch), nie mehr als es Patienten gibt.
     function patientNeedsOnPage() {
-        const own = el => el.closest('.eh-box');
-        const alerts = [...document.querySelectorAll('div, span, p')]
-            .filter(el => !own(el) && /Wir benötigen:\s*\S/i.test(el.textContent) && el.textContent.length < 160)
-            // nur das innerste Element mit dem Text, sonst zählt ein Patient mehrfach
-            .filter(el => ![...el.children].some(c => /Wir benötigen:\s*\S/i.test(c.textContent)));
-        const needs = {};
-        for (const el of alerts) {
-            const text = el.textContent.replace(/\s+/g, ' ').split(/Wir benötigen:/i)[1] ?? '';
-            let known = false;
-            for (const n of PATIENT_NEEDS) {
-                if (n.re.test(text)) { needs[n.label] = (needs[n.label] || 0) + 1; known = true; }
-            }
-            if (!known && text.trim()) needs[text.trim().slice(0, 40)] = (needs[text.trim().slice(0, 40)] || 0) + 1;
+        const hasNeed = el => /Wir benötigen:\s*\S/i.test(el.textContent);
+        const visible = el => el.getClientRects().length > 0;
+        // Pro Kärtchen nur der rote Hinweis selbst (innerstes Element), nicht die kleinen Schilder darunter
+        const innermost = root => [...root.querySelectorAll('div, span, p')]
+            .filter(el => hasNeed(el) && ![...el.children].some(hasNeed))
+            .map(el => el.textContent).join(' ');
+        let groups = patientCards().filter(hasNeed).map(card => innermost(card) || card.textContent);
+        if (!groups.length) {
+            // Keine Kärtchen erkannt: einzelne Hinweise, jeweils das innerste sichtbare Element
+            groups = [...document.querySelectorAll('div, span, p')]
+                .filter(el => !el.closest('.eh-box') && hasNeed(el) && el.textContent.length < 160 && visible(el))
+                .filter(el => ![...el.children].some(hasNeed))
+                .map(el => el.textContent);
         }
+        const needs = {};
+        for (const raw of groups) {
+            const seen = new Set();
+            for (const part of raw.replace(/\s+/g, ' ').split(/Wir benötigen:/i).slice(1)) {
+                const text = part.slice(0, 80);
+                let known = false;
+                for (const n of PATIENT_NEEDS) if (n.re.test(text)) { seen.add(n.label); known = true; }
+                if (!known && text.trim()) seen.add(text.trim().slice(0, 40));
+            }
+            for (const label of seen) needs[label] = (needs[label] || 0) + 1;
+        }
+        const patients = patientsOnPage();
+        if (patients) for (const label of Object.keys(needs)) needs[label] = Math.min(needs[label], patients);
         return needs;
     }
 
@@ -419,16 +437,38 @@
         }
         // Rote Meldung des Spiels "Fehlende Fahrzeuge: 1 Drehleiter (DLK 23), 1 FwK": das Spiel hat entschieden,
         // dass diese Fahrzeuge wirklich gebraucht werden. Passende Zeilen werden zur festen Anforderung.
-        const norm = t => String(t ?? '').toLowerCase().replace(/[^a-z0-9äöüß]+/g, ' ').trim();
+        // Einzahl/Mehrzahl angleichen: "Löschfahrzeug" = "Löschfahrzeuge", "Drehleiter" = "Drehleitern"
+        const stem = w => (w.length > 4 ? w.replace(/(en|e|n|s)$/, '') : w);
+        const norm = t => String(t ?? '').toLowerCase().replace(/[^a-z0-9äöüß]+/g, ' ').trim().split(' ').map(stem).join(' ');
         const contains = (hay, needle) => needle && ` ${hay} `.includes(` ${needle} `);
-        for (const item of counts.gameMissing ?? []) {
+        // Passt die Meldung zu einer Anforderung? Über den Namen, die Abkürzung in Klammern ("(LF)")
+        // oder den Kurznamen eines passenden Fahrzeugtyps ("DLK 23", "FwK")
+        const matches = (item, label, typeIds) => {
             const text = norm(item.text);
-            const row = rows.find(r => r.typeIds?.length && (
-                contains(text, norm(r.label)) || contains(norm(r.label), text)
-                || r.typeIds.some(t => contains(text, norm(types[t]?.caption)))));
+            const name = norm(item.text.replace(/\(.*?\)/g, ''));
+            const abbr = norm(item.text.match(/\(([^)]+)\)/)?.[1]);
+            const captions = typeIds.map(t => norm(types[t]?.caption)).filter(Boolean);
+            return contains(text, norm(label)) || contains(norm(label), name)
+                || captions.some(c => contains(text, c) || (abbr && contains(c, abbr)));
+        };
+        for (const item of counts.gameMissing ?? []) {
+            let row = rows.find(r => r.typeIds?.length && matches(item, r.label, r.typeIds));
+            // Noch keine Zeile dafür: aus der Anforderungsliste eine anlegen
+            if (!row) {
+                const entry = Object.entries(REQ).find(([, [label, ids]]) => ids.length && matches(item, label, ids));
+                if (entry) {
+                    const [key, [label, typeIds]] = entry;
+                    row = {
+                        key, label, needed: 0, chance: null, unknown: false, typeIds,
+                        scene: sumFor(counts.scene, typeIds), driving: sumFor(counts.driving, typeIds), selected: sumFor(counts.selected, typeIds),
+                    };
+                    rows.push(row);
+                }
+            }
             if (row) {
                 const firm = row.chance != null ? 0 : row.needed;
-                row.needed = Math.max(firm, row.scene + row.driving + item.count);
+                // Das Spiel zählt nur Fahrzeuge VOR ORT; was auf Anfahrt ist, steht dort noch als fehlend
+                row.needed = Math.max(firm, row.scene + item.count);
                 row.chance = null;
                 row.unknown = false;
                 continue;
@@ -443,8 +483,11 @@
         for (const [label, count] of Object.entries(counts.patientNeeds ?? {})) {
             if (label === 'RTW') continue;
             const def = PATIENT_NEEDS.find(n => n.label === label);
-            const needed = def?.perPatient === false ? 1 : count;
             const typeIds = def?.typeIds ?? [];
+            // Der rote Hinweis verschwindet, sobald der Patient versorgt ist. Fahrzeuge VOR ORT haben ihren
+            // Patienten also schon und kommen obendrauf; Fahrzeuge auf Anfahrt decken noch offene Hinweise ab.
+            const scene = sumFor(counts.scene, typeIds);
+            const needed = scene + (def?.perPatient === false ? 1 : count);
             const existing = def && rows.find(r => r.label === def.label || (r.typeIds && r.typeIds.join() === typeIds.join()));
             if (existing) {
                 existing.needed = Math.max(existing.chance != null ? 0 : existing.needed, needed);
@@ -454,7 +497,7 @@
             }
             rows.push({
                 key: `patient_${label}`, label: `${label} (Patienten)`, needed, chance: null, unknown: !typeIds.length, typeIds,
-                scene: sumFor(counts.scene, typeIds), driving: sumFor(counts.driving, typeIds), selected: sumFor(counts.selected, typeIds),
+                scene, driving: sumFor(counts.driving, typeIds), selected: sumFor(counts.selected, typeIds),
             });
         }
         // Mindestpersonal; angehakte Fahrzeuge mit ihrer zugewiesenen Besatzung (falls bekannt)
