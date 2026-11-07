@@ -310,6 +310,7 @@
     lss.addTool({ label: '👥 Personal zuweisen', scope: 'building', order: 30, run: id => start(id, null) });
     lss.addTool({ label: '👥 Personal zuweisen (alle Wachen)', scope: 'all', order: 30, run: () => start(null, null) });
     lss.addTool({ label: '♻️ Personal umsortieren', scope: 'building', order: 31, run: id => start(id, null, true) });
+    lss.addTool({ label: '♻️ Personal umsortieren (alle Wachen)', scope: 'all', order: 31, run: () => start(null, null, true) });
 
     // Wachen-Seite: alle Fahrzeuge dieser Wache, Knopf direkt über der Fahrzeugliste
     const building = location.pathname.match(/^\/buildings\/(\d+)\/?$/);

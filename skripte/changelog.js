@@ -10,6 +10,10 @@
     // Neueste zuerst; version muss bei jedem neuen Eintrag größer werden
     const CHANGELOG = [
         {
+            version: 17, date: '07.11.2026', title: 'Personal umsortieren für alle Wachen',
+            items: ['♻️ Im Werkzeuge-Menü: „Personal umsortieren (alle Wachen)“ räumt falsch eingeteiltes Fachpersonal an allen Wachen auf einmal auf'],
+        },
+        {
             version: 16, date: '07.11.2026', title: 'Fahrzeugnamen bleiben aus',
             items: [
                 '🏷️ Die Fahrzeugnamen auf der Karte bleiben jetzt dauerhaft ausgeblendet, auch wenn das Spiel sie von selbst wieder einschaltet',

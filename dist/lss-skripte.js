@@ -970,6 +970,7 @@ const lss = (() => {
     lss.addTool({ label: '👥 Personal zuweisen', scope: 'building', order: 30, run: id => start(id, null) });
     lss.addTool({ label: '👥 Personal zuweisen (alle Wachen)', scope: 'all', order: 30, run: () => start(null, null) });
     lss.addTool({ label: '♻️ Personal umsortieren', scope: 'building', order: 31, run: id => start(id, null, true) });
+    lss.addTool({ label: '♻️ Personal umsortieren (alle Wachen)', scope: 'all', order: 31, run: () => start(null, null, true) });
 
     // Wachen-Seite: alle Fahrzeuge dieser Wache, Knopf direkt über der Fahrzeugliste
     const building = location.pathname.match(/^\/buildings\/(\d+)\/?$/);
@@ -3304,6 +3305,10 @@ const lss = (() => {
     // Neueste zuerst; version muss bei jedem neuen Eintrag größer werden
     const CHANGELOG = [
         {
+            version: 17, date: '07.11.2026', title: 'Personal umsortieren für alle Wachen',
+            items: ['♻️ Im Werkzeuge-Menü: „Personal umsortieren (alle Wachen)“ räumt falsch eingeteiltes Fachpersonal an allen Wachen auf einmal auf'],
+        },
+        {
             version: 16, date: '07.11.2026', title: 'Fahrzeugnamen bleiben aus',
             items: [
                 '🏷️ Die Fahrzeugnamen auf der Karte bleiben jetzt dauerhaft ausgeblendet, auch wenn das Spiel sie von selbst wieder einschaltet',
@@ -3461,4 +3466,4 @@ const lss = (() => {
 })();
 
 /* exported LSS_BUILD */
-var LSS_BUILD = {"built":"2026-11-07T12:28:50.357Z","files":[["gemeinsam.js",4],["themes.js",482],["fahrzeuge-umbenennen.js",561],["personal-zuweisen.js",661],["personal-verschieben.js",991],["wachen-check.js",1267],["fahrzeug-uebersicht.js",1495],["personal-werben.js",1650],["auslastung.js",1757],["einsatz-helfer.js",1909],["dashboard.js",2463],["kauf-berater.js",2686],["sprechwunsch.js",2878],["fahrzeugnamen-karte.js",3144],["schnellstart.js",3216],["changelog.js",3295]]};
+var LSS_BUILD = {"built":"2026-11-07T19:58:00.571Z","files":[["gemeinsam.js",4],["themes.js",482],["fahrzeuge-umbenennen.js",561],["personal-zuweisen.js",661],["personal-verschieben.js",992],["wachen-check.js",1268],["fahrzeug-uebersicht.js",1496],["personal-werben.js",1651],["auslastung.js",1758],["einsatz-helfer.js",1910],["dashboard.js",2464],["kauf-berater.js",2687],["sprechwunsch.js",2879],["fahrzeugnamen-karte.js",3145],["schnellstart.js",3217],["changelog.js",3296]]};
