@@ -11,7 +11,10 @@
     const CHANGELOG = [
         {
             version: 19, date: '08.11.2026', title: 'Sprechwunsch-Helfer: Zellen im Fahrzeugfenster',
-            items: ['🚔 Auch im Fahrzeugfenster („Zelle wählen“) wird jetzt die beste Zelle markiert und kann mit „Anfahren“ direkt gewählt werden'],
+            items: [
+                '🚔 Auch im Fahrzeugfenster („Zelle wählen“) wird jetzt die beste Zelle markiert und kann mit „Anfahren“ direkt gewählt werden',
+                '⏭ Nach dem Anfahren geht es immer automatisch zum nächsten Sprechwunsch (der Haken ist weg), auch bei Polizeifahrzeugen',
+            ],
         },
         {
             version: 18, date: '07.11.2026', title: 'Einsatz-Helfer liest Patientenwünsche',

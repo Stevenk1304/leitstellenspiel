@@ -7,7 +7,8 @@
 (function () {
     'use strict';
 
-    const AUTO_KEY = 'sprechwunsch.autoNext';
+    // Fahrzeug, zu dem die Automatik gerade gesprungen ist
+    const JUMP_KEY = 'sprechwunsch.jump';
     // Gerade bearbeitete Fahrzeuge; die API meldet sie noch ein paar Sekunden als Status 5
     const DONE_KEY = 'sprechwunsch.done';
     const DONE_SECONDS = 120;
@@ -43,7 +44,6 @@
         document.head.append(style);
     }
 
-    const autoNext = () => { try { return GM_getValue(AUTO_KEY, true); } catch (e) { return true; } };
 
     // Spaltennummern anhand der Überschriften finden
     function columns(table) {
@@ -105,14 +105,18 @@
         return (await r.json()).filter(v => v.fms_real === 5 && !done.has(String(v.id))).sort((a, b) => a.id - b.id)[0] ?? null;
     }
 
-    // Polizeifahrzeuge geben Gefangene im Alarmfenster ihres Einsatzes ab, alle anderen im Fahrzeugfenster
-    const POLICE_BUILDINGS = [6, 11, 13, 17, 19, 24, 29];
-    async function urlFor(vehicle) {
-        const types = await lss.getVehicleTypes().catch(() => ({}));
-        const police = (types[vehicle.vehicle_type]?.possibleBuildings ?? []).some(b => POLICE_BUILDINGS.includes(b));
-        if (police && vehicle.target_type === 'mission' && vehicle.target_id) return `/missions/${vehicle.target_id}`;
-        return `/vehicles/${vehicle.id}`;
+    // Immer erst ins Fahrzeugfenster: dort stehen Krankenhäuser und meist auch die Zellen. Muss die
+    // Entscheidung an der Einsatzstelle fallen, springt initVehicle von dort ins Alarmfenster weiter.
+    function goTo(vehicle) {
+        try { sessionStorage.setItem(JUMP_KEY, JSON.stringify({ id: String(vehicle.id), t: Date.now() })); } catch (e) { /* kein Speicher */ }
+        location.href = `/vehicles/${vehicle.id}`;
     }
+    const jumpedTo = id => {
+        try {
+            const j = JSON.parse(sessionStorage.getItem(JUMP_KEY) || 'null');
+            return !!j && j.id === String(id) && Date.now() - j.t < 60 * 1000;
+        } catch (e) { return false; }
+    };
 
     const setStatus = (box, text) => {
         const el = box.querySelector('.sw-status');
@@ -133,9 +137,11 @@
             location.reload();
             return;
         }
+        setStatus(box, 'Suche nächsten Sprechwunsch …');
         const next = await nextTalker(vehicleId);
         if (next) {
-            location.href = await urlFor(next);
+            setStatus(box, `Weiter zu ${next.caption ?? 'nächstem Fahrzeug'} …`);
+            goTo(next);
         } else {
             box.innerHTML = '<div class="sw-done">✔ Alle Sprechwünsche erledigt!</div>';
             setTimeout(() => location.reload(), 1500);
@@ -161,12 +167,9 @@
                 <a class="sw-go" href="${e(choice.link.getAttribute('href'))}">${kind === 'Krankenhaus' ? '🚑' : '🚔'} Anfahren</a>
             </div>` : `<div class="sw-none">${noneText}</div>`}
             <div class="sw-foot">
-                <label><input type="checkbox" class="sw-auto" ${autoNext() ? 'checked' : ''}> Danach automatisch zum nächsten Sprechwunsch</label>
+                <span>⏭ Nach dem Anfahren geht es automatisch zum nächsten Sprechwunsch</span>
                 <span class="sw-status" style="margin-left:auto"></span>
             </div>`;
-        box.querySelector('.sw-auto').addEventListener('change', ev => {
-            try { GM_setValue(AUTO_KEY, ev.target.checked); } catch (err) { /* kein Speicher */ }
-        });
         return box;
     }
 
@@ -176,7 +179,7 @@
         let sent = false;
         document.addEventListener('click', ev => {
             const link = ev.target.closest(selector);
-            if (!link || !autoNext()) return;
+            if (!link) return;
             ev.preventDefault();
             ev.stopPropagation();
             if (sent) return;
@@ -199,7 +202,16 @@
         // Krankenhäuser stehen in Tabellen, Zellen als Knöpfe ("Zelle wählen")
         let list = targets();
         if (!list.length) list = prisonButtons(document);
-        if (!list.length) return;
+        if (!list.length) {
+            // Automatisch hergesprungen, aber hier gibt es nichts zu wählen: weiter zur Einsatzstelle
+            const area = heading.closest('.alert') ?? heading.parentElement;
+            const mission = area?.querySelector('a[href*="/missions/"]');
+            if (mission && jumpedTo(vehicleId)) {
+                try { sessionStorage.removeItem(JUMP_KEY); } catch (e) { /* kein Speicher */ }
+                location.href = mission.getAttribute('href');
+            }
+            return;
+        }
         const choice = best(list);
         const kind = list[0].link.href.includes('/patient/') ? 'Krankenhaus' : 'Zelle';
 
