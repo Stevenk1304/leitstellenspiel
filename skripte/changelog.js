@@ -10,6 +10,15 @@
     // Neueste zuerst; version muss bei jedem neuen Eintrag größer werden
     const CHANGELOG = [
         {
+            version: 18, date: '07.11.2026', title: 'Einsatz-Helfer liest Patientenwünsche',
+            items: [
+                '🚑 Patienten werden jetzt richtig gezählt (auch wenn nur „3 Patienten“ dasteht), fehlende RTW erscheinen wieder',
+                '🩺 „Wir benötigen: LNA / OrgL / NEF / RTH“ auf den Patienten-Kärtchen wird gelesen: LNA und OrgL je einmal pro Einsatz, NEF und RTH pro Patient',
+                '✓ „Fehlendes auswählen“ hakt diese Fahrzeuge jetzt mit an',
+                '🟥 Die rote Spiel-Meldung „Fehlende Fahrzeuge: …“ wird gelesen: aus „evtl.“ wird dann eine feste Anforderung (z.B. DLK, FwK)',
+            ],
+        },
+        {
             version: 17, date: '07.11.2026', title: 'Personal umsortieren für alle Wachen',
             items: ['♻️ Im Werkzeuge-Menü: „Personal umsortieren (alle Wachen)“ räumt falsch eingeteiltes Fachpersonal an allen Wachen auf einmal auf'],
         },

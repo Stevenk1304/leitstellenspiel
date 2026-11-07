@@ -2132,10 +2132,70 @@ const lss = (() => {
         return num ? Number(num[1].replace(',', '.')) : Infinity;
     }
 
-    // "1 Patienten - 1 unbehandelte Patienten" im Alarmfenster; null, wenn keine Angabe zu finden ist
+    // Patientenzahl im Alarmfenster; null, wenn keine Angabe zu finden ist.
+    // 1. Patienten-Kärtchen zählen, 2. Text "3 Patienten - 2 unbehandelte", 3. Überschrift "3 Patienten".
+    // Der Text unseres eigenen Kastens ("bis zu 3 Patienten") wird dabei nicht mitgelesen.
     function patientsOnPage() {
-        const m = document.body.textContent.match(/(\d+)\s+Patienten?\s*-\s*\d+\s+unbehandelte/i);
-        return m ? Number(m[1]) : null;
+        const own = el => el.closest('.eh-box');
+        const cards = [...document.querySelectorAll('.mission_patient, div[id^="patient_"]')]
+            .filter(el => !own(el) && (el.classList.contains('mission_patient') || /^patient_\d+$/.test(el.id)))
+            // Verschachtelte Treffer (Kärtchen in Kärtchen) nur einmal zählen
+            .filter((el, _, all) => !all.some(o => o !== el && o.contains(el)));
+        if (cards.length) return cards.length;
+        const texts = [...document.querySelectorAll('h1,h2,h3,h4,h5,h6,small,span,div,p')]
+            .filter(el => !own(el) && el.children.length <= 3 && el.textContent.length < 120 && /Patient/i.test(el.textContent))
+            .map(el => el.textContent.replace(/\s+/g, ' '));
+        for (const re of [/(\d+)\s+Patienten?\s*-\s*\d+\s+unbehandelte/i, /^\s*(\d+)\s+Patienten?\b/i]) {
+            for (const t of texts) {
+                const m = t.match(re);
+                if (m) return Number(m[1]);
+            }
+        }
+        return null;
+    }
+
+    // Rote Meldung des Spiels oben im Alarmfenster: "Fehlende Fahrzeuge: 1 Drehleiter (DLK 23), 1 FwK"
+    // → [{ count: 1, text: 'Drehleiter (DLK 23)' }, { count: 1, text: 'FwK' }]
+    function gameMissingOnPage() {
+        const el = [...document.querySelectorAll('#missing_text, .alert, div, span, p')]
+            .find(x => !x.closest('.eh-box') && /Fehlende Fahrzeuge:\s*\S/i.test(x.textContent) && x.textContent.length < 600
+                && ![...x.children].some(c => /Fehlende Fahrzeuge:\s*\S/i.test(c.textContent)));
+        if (!el) return [];
+        // Nur der Teil mit den Fahrzeugen; Sätze danach (z.B. Personal, Wasser) gehören nicht dazu
+        const part = el.textContent.replace(/\s+/g, ' ').split(/Fehlende Fahrzeuge:/i)[1].split(/\.\s+[A-ZÄÖÜ]|\.$/)[0];
+        return part.split(/,\s*|\s+und\s+/)
+            .map(s => s.trim().match(/^(\d+)\s*x?\s+(.+)$/))
+            .filter(Boolean)
+            .map(m => ({ count: Number(m[1]), text: m[2].trim() }));
+    }
+
+    // Was die Patienten-Kärtchen verlangen ("Wir benötigen: LNA"). perPatient: jeder Patient braucht ein
+    // eigenes Fahrzeug; sonst reicht eines für alle (z.B. ein LNA für den ganzen Einsatz).
+    const PATIENT_NEEDS = [
+        { re: /\bRTW\b/, label: 'RTW', typeIds: [28, 73, 74], perPatient: true },
+        { re: /\bNEF\b|Notarzt/i, label: 'NEF', typeIds: [29, 74, 31, 149], perPatient: true },
+        { re: /\bRTH\b|Hubschrauber/i, label: 'RTH', typeIds: [31, 157], perPatient: true },
+        { re: /\bLNA\b|Leitende[rn]? Notarzt/i, label: 'LNA', typeIds: [55], perPatient: false },
+        { re: /\bOrgL\b|Organisatorische[rn]? Leiter/i, label: 'OrgL', typeIds: [56], perPatient: false },
+    ];
+
+    // { label: Anzahl Patienten, die es verlangen }; unbekannte Wünsche unter ihrem Text
+    function patientNeedsOnPage() {
+        const own = el => el.closest('.eh-box');
+        const alerts = [...document.querySelectorAll('div, span, p')]
+            .filter(el => !own(el) && /Wir benötigen:\s*\S/i.test(el.textContent) && el.textContent.length < 160)
+            // nur das innerste Element mit dem Text, sonst zählt ein Patient mehrfach
+            .filter(el => ![...el.children].some(c => /Wir benötigen:\s*\S/i.test(c.textContent)));
+        const needs = {};
+        for (const el of alerts) {
+            const text = el.textContent.replace(/\s+/g, ' ').split(/Wir benötigen:/i)[1] ?? '';
+            let known = false;
+            for (const n of PATIENT_NEEDS) {
+                if (n.re.test(text)) { needs[n.label] = (needs[n.label] || 0) + 1; known = true; }
+            }
+            if (!known && text.trim()) needs[text.trim().slice(0, 40)] = (needs[text.trim().slice(0, 40)] || 0) + 1;
+        }
+        return needs;
     }
 
     // Alle Fahrzeuge in den Fahrzeuglisten des Alarmfensters, nächstes zuerst. Ein Fahrzeug kann in
@@ -2262,7 +2322,47 @@ const lss = (() => {
             if (key in m.req || key === 'patient_transport' || key === 'patient_other_treatment') continue;
             const [label, typeIds] = REQ[key] ?? [key, []];
             rows.push({
-                label, needed: 1, chance, unknown: !typeIds.length,
+                key, label, needed: 1, chance, unknown: !typeIds.length, typeIds,
+                scene: sumFor(counts.scene, typeIds), driving: sumFor(counts.driving, typeIds), selected: sumFor(counts.selected, typeIds),
+            });
+        }
+        // Rote Meldung des Spiels "Fehlende Fahrzeuge: 1 Drehleiter (DLK 23), 1 FwK": das Spiel hat entschieden,
+        // dass diese Fahrzeuge wirklich gebraucht werden. Passende Zeilen werden zur festen Anforderung.
+        const norm = t => String(t ?? '').toLowerCase().replace(/[^a-z0-9äöüß]+/g, ' ').trim();
+        const contains = (hay, needle) => needle && ` ${hay} `.includes(` ${needle} `);
+        for (const item of counts.gameMissing ?? []) {
+            const text = norm(item.text);
+            const row = rows.find(r => r.typeIds?.length && (
+                contains(text, norm(r.label)) || contains(norm(r.label), text)
+                || r.typeIds.some(t => contains(text, norm(types[t]?.caption)))));
+            if (row) {
+                const firm = row.chance != null ? 0 : row.needed;
+                row.needed = Math.max(firm, row.scene + row.driving + item.count);
+                row.chance = null;
+                row.unknown = false;
+                continue;
+            }
+            rows.push({
+                label: `${item.text} (laut Spiel)`, needed: item.count, chance: null, unknown: true,
+                scene: 0, driving: 0, selected: 0,
+            });
+        }
+        // Wünsche der Patienten ("Wir benötigen: LNA"): RTW steckt schon in der Patienten-Zeile.
+        // Gibt es schon eine Zeile für dasselbe Fahrzeug (z.B. NEF 30 %), wird sie zur festen Anforderung.
+        for (const [label, count] of Object.entries(counts.patientNeeds ?? {})) {
+            if (label === 'RTW') continue;
+            const def = PATIENT_NEEDS.find(n => n.label === label);
+            const needed = def?.perPatient === false ? 1 : count;
+            const typeIds = def?.typeIds ?? [];
+            const existing = def && rows.find(r => r.label === def.label || (r.typeIds && r.typeIds.join() === typeIds.join()));
+            if (existing) {
+                existing.needed = Math.max(existing.chance != null ? 0 : existing.needed, needed);
+                existing.chance = null;
+                existing.typeIds = existing.typeIds ?? typeIds;
+                continue;
+            }
+            rows.push({
+                key: `patient_${label}`, label: `${label} (Patienten)`, needed, chance: null, unknown: !typeIds.length, typeIds,
                 scene: sumFor(counts.scene, typeIds), driving: sumFor(counts.driving, typeIds), selected: sumFor(counts.selected, typeIds),
             });
         }
@@ -2408,6 +2508,8 @@ const lss = (() => {
                 crewDriving: countCrew('mission_vehicle_driving', types),
                 crewSelected: crewOfSelected(selected, ownVehicles, types),
                 patients: patientsOnPage(),
+                patientNeeds: patientNeedsOnPage(),
+                gameMissing: gameMissingOnPage(),
             }, types);
         };
         const update = () => {
@@ -2420,6 +2522,9 @@ const lss = (() => {
             selectedVehicles(ownVehicles).map(v => v.id).join(','),
             document.querySelectorAll('#mission_vehicle_at_mission tr, #mission_vehicle_driving tr').length,
             ownVehicles ? 1 : 0,
+            patientsOnPage(),
+            JSON.stringify(patientNeedsOnPage()),
+            JSON.stringify(gameMissingOnPage()),
         ].join('|');
         box.addEventListener('click', e => {
             if (e.target.closest('.eh-pick')) {
@@ -3305,6 +3410,15 @@ const lss = (() => {
     // Neueste zuerst; version muss bei jedem neuen Eintrag größer werden
     const CHANGELOG = [
         {
+            version: 18, date: '07.11.2026', title: 'Einsatz-Helfer liest Patientenwünsche',
+            items: [
+                '🚑 Patienten werden jetzt richtig gezählt (auch wenn nur „3 Patienten“ dasteht), fehlende RTW erscheinen wieder',
+                '🩺 „Wir benötigen: LNA / OrgL / NEF / RTH“ auf den Patienten-Kärtchen wird gelesen: LNA und OrgL je einmal pro Einsatz, NEF und RTH pro Patient',
+                '✓ „Fehlendes auswählen“ hakt diese Fahrzeuge jetzt mit an',
+                '🟥 Die rote Spiel-Meldung „Fehlende Fahrzeuge: …“ wird gelesen: aus „evtl.“ wird dann eine feste Anforderung (z.B. DLK, FwK)',
+            ],
+        },
+        {
             version: 17, date: '07.11.2026', title: 'Personal umsortieren für alle Wachen',
             items: ['♻️ Im Werkzeuge-Menü: „Personal umsortieren (alle Wachen)“ räumt falsch eingeteiltes Fachpersonal an allen Wachen auf einmal auf'],
         },
@@ -3466,4 +3580,4 @@ const lss = (() => {
 })();
 
 /* exported LSS_BUILD */
-var LSS_BUILD = {"built":"2026-11-07T19:58:00.571Z","files":[["gemeinsam.js",4],["themes.js",482],["fahrzeuge-umbenennen.js",561],["personal-zuweisen.js",661],["personal-verschieben.js",992],["wachen-check.js",1268],["fahrzeug-uebersicht.js",1496],["personal-werben.js",1651],["auslastung.js",1758],["einsatz-helfer.js",1910],["dashboard.js",2464],["kauf-berater.js",2687],["sprechwunsch.js",2879],["fahrzeugnamen-karte.js",3145],["schnellstart.js",3217],["changelog.js",3296]]};
+var LSS_BUILD = {"built":"2026-11-07T20:16:51.384Z","files":[["gemeinsam.js",4],["themes.js",482],["fahrzeuge-umbenennen.js",561],["personal-zuweisen.js",661],["personal-verschieben.js",992],["wachen-check.js",1268],["fahrzeug-uebersicht.js",1496],["personal-werben.js",1651],["auslastung.js",1758],["einsatz-helfer.js",1910],["dashboard.js",2569],["kauf-berater.js",2792],["sprechwunsch.js",2984],["fahrzeugnamen-karte.js",3250],["schnellstart.js",3322],["changelog.js",3401]]};
