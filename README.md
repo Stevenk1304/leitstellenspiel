@@ -7,6 +7,7 @@ Eigene Tampermonkey-Skripte für leitstellenspiel.de.
 | `skripte/gemeinsam.js` | Gemeinsame Hilfsfunktionen, Fenster-Design, Werkzeuge-Menü und Fehler-Melder mit 🐞 Fehlerprotokoll (muss zuerst geladen werden) |
 | `skripte/fahrzeuge-umbenennen.js` | Fahrzeuge nach dem Muster `RTW-1 \| Wache` umbenennen |
 | `skripte/personal-zuweisen.js` | Fahrzeuge mit passendem freiem Personal der Wache auffüllen |
+| `skripte/personal-verschieben.js` | 🔀 Personal von einer anderen Wache übernehmen (Filter, Wochenlimit, Rückfrage) |
 | `skripte/wachen-check.js` | Übersicht über Probleme an allen Wachen (Personal, Namen, Leitstelle, Ausbauten) |
 | `skripte/fahrzeug-uebersicht.js` | Fahrzeuge pro Typ: gesamt, frei, im Einsatz, Sprechwunsch, außer Dienst, ohne Personal |
 | `skripte/personal-werben.js` | Personalwerbung (längste Phase, nie Coins) an Wachen mit Personalmangel starten |
@@ -14,6 +15,7 @@ Eigene Tampermonkey-Skripte für leitstellenspiel.de.
 | `skripte/einsatz-helfer.js` | Im Alarmfenster: was der Einsatz braucht, was da ist und was fehlt; „Fehlendes auswählen“ hakt die nächsten passenden Fahrzeuge an |
 | `skripte/dashboard.js` | Alle wichtigen Zahlen auf einen Blick, mit Schnellzugriff auf die Werkzeuge |
 | `skripte/sprechwunsch.js` | 📻 Bestes Krankenhaus/Zelle bei Sprechwünschen markieren, danach automatisch zum nächsten |
+| `skripte/fahrzeugnamen-karte.js` | 🏷️ Fahrzeugnamen auf der Karte dauerhaft ausblenden (abschaltbar) |
 | `skripte/themes.js` | 🎨 Farbschema für alle Werkzeuge |
 | `skripte/schnellstart.js` | ⭐ Lieblingswerkzeuge als Symbole in der Spiel-Leiste |
 | `skripte/changelog.js` | 📰 „Was ist neu?“ und Hinweis nach Updates |

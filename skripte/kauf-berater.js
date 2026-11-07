@@ -14,6 +14,25 @@
     // Wie oft die Einsatzliste der Hauptseite nach neuen Einsätzen durchsucht wird
     const SCAN_SECONDS = 60;
 
+    // Wo man ein Fahrzeug kaufen kann: Gebäudetyp-Nummern des Spiels → kurzer Name.
+    // Kleinwachen zählen wie die normale Wache, Komplexe werden nicht extra genannt.
+    const BUILDING_NAMES = {
+        0: 'Feuerwache', 18: 'Feuerwache', 2: 'Rettungswache', 20: 'Rettungswache', 5: 'RTH-Station',
+        6: 'Polizeiwache', 19: 'Polizeiwache', 9: 'THW', 11: 'Bereitschaftspolizei', 12: 'SEG',
+        13: 'Polizeihubschrauber-Station', 15: 'Wasserrettung', 17: 'Polizei-Sondereinheiten',
+        21: 'Rettungshundestaffel', 24: 'Reiterstaffel', 25: 'Bergrettung', 26: 'Seenotrettung',
+        28: 'Seenot-Hubschrauberstation', 29: 'Autobahnpolizei',
+    };
+
+    // Alle Wachenarten, an denen irgendein passendes Fahrzeug gekauft werden kann
+    function whereToBuy(typeIds, types) {
+        const names = new Set();
+        for (const t of typeIds) {
+            for (const b of types[t]?.possibleBuildings ?? []) if (BUILDING_NAMES[b]) names.add(BUILDING_NAMES[b]);
+        }
+        return [...names];
+    }
+
     const now = () => Date.now();
     const cutoff = () => now() - KEEP_DAYS * 864e5;
     const load = key => { try { return GM_getValue(key, []); } catch (e) { return []; } };
@@ -57,6 +76,7 @@
         .kb-table td { padding:7px 10px; border-bottom:1px solid #2e3238; text-align:right; font-variant-numeric:tabular-nums; }
         .kb-table tr:hover td { background:#2a2e34; }
         .kb-name { color:#fff; font-weight:600; }
+        .kb-where { display:block; color:#8b929c; font-size:11px; font-weight:400; margin-top:2px; }
         .kb-zero { color:#4b5058; }
         .kb-badge { display:inline-block; border-radius:999px; padding:2px 10px; font-size:11px; font-weight:700; white-space:nowrap; }
         .kb-buy { background:#c9302c; color:#fff; }
@@ -75,7 +95,7 @@
     }
 
     // Bedarf je Anforderung: in wie vielen Einsätzen gebraucht (Wahrscheinlichkeit anteilig) und wie viele auf einmal
-    function analyse(missions, shortages, missionTypes, vehicles, REQ) {
+    function analyse(missions, shortages, missionTypes, vehicles, REQ, types) {
         const stats = {};
         const get = key => stats[key] ??= { key, missions: 0, peak: 0, shortages: 0 };
         let known = 0;
@@ -106,7 +126,7 @@
             const tooFew = have < s.peak && s.missions >= 2;
             const score = s.shortages * 5 + s.missions / Math.max(have, 0.5) + (tooFew ? 10 : 0);
             const verdict = have === 0 || tooFew ? 'buy' : s.shortages > 0 ? 'more' : 'ok';
-            return { ...s, label, have, score, verdict };
+            return { ...s, label, have, score, verdict, where: whereToBuy(typeIds, types) };
         });
         rows.sort((a, b) => ({ buy: 0, more: 1, ok: 2 }[a.verdict] - { buy: 0, more: 1, ok: 2 }[b.verdict]) || b.score - a.score);
         return { rows, known };
@@ -115,11 +135,13 @@
     async function start() {
         const REQ = lss.actions.missionRequirements;
         if (!REQ || !lss.actions.missionTypes) throw new Error('Einsatz-Helfer ist nicht geladen');
-        const [missionTypes, vehicles] = await Promise.all([lss.actions.missionTypes(), lss.getJSON('/api/vehicles')]);
+        const [missionTypes, vehicles, types] = await Promise.all([
+            lss.actions.missionTypes(), lss.getJSON('/api/vehicles'), lss.getVehicleTypes().catch(() => ({})),
+        ]);
         scanMissionList();
         const missions = load(MISSIONS_KEY).filter(x => x.t >= cutoff());
         const shortages = load(SHORTAGES_KEY).filter(x => x.t >= cutoff());
-        const { rows, known } = analyse(missions, shortages, missionTypes, vehicles, REQ);
+        const { rows, known } = analyse(missions, shortages, missionTypes, vehicles, REQ, types);
         const since = missions.length ? new Date(Math.min(...missions.map(x => x.t))).toLocaleDateString('de-DE') : null;
         const e = lss.escapeHtml;
         const fmt = n => (Math.round(n * 10) / 10).toLocaleString('de-DE');
@@ -138,7 +160,7 @@
                         <thead><tr><th>Fahrzeug</th><th title="In wie vielen Einsätzen gebraucht (Wahrscheinlichkeiten anteilig)">Einsätze</th><th title="Höchstens auf einmal gebraucht">Max.</th><th>Du hast</th><th title="Kein freies Fahrzeug bei „Fehlendes auswählen“">Engpässe</th><th></th></tr></thead>
                         <tbody>${rows.map(r => `
                             <tr>
-                                <td class="kb-name">${e(r.label)}</td>
+                                <td class="kb-name">${e(r.label)}${r.where.length ? `<span class="kb-where">🏠 ${e(r.where.join(', '))}</span>` : ''}</td>
                                 <td>${fmt(r.missions)}</td>
                                 <td>${r.peak}</td>
                                 <td class="${r.have ? '' : 'kb-short'}">${r.have}</td>

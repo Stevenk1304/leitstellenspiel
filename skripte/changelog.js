@@ -10,6 +10,29 @@
     // Neueste zuerst; version muss bei jedem neuen Eintrag größer werden
     const CHANGELOG = [
         {
+            version: 16, date: '07.11.2026', title: 'Fahrzeugnamen bleiben aus',
+            items: [
+                '🏷️ Die Fahrzeugnamen auf der Karte bleiben jetzt dauerhaft ausgeblendet, auch wenn das Spiel sie von selbst wieder einschaltet',
+                'Im Werkzeuge-Menü mit „Fahrzeugnamen auf Karte ein/aus“ abschaltbar',
+                '🛒 Was soll ich kaufen?: unter jedem Fahrzeug steht jetzt, an welcher Wache man es kaufen kann',
+                '👥 Personal zuweisen: ausgebildete Leute (z.B. Wasserschaden/Pumpen) landen nicht mehr auf Fahrzeugen ohne Ausbildungspflicht wie dem GKW',
+                '🚛 Anhänger: die Ausbildung, die ein Anhänger braucht (z.B. Anh SwPu, NEA200, Boote), wird jetzt beim Zugfahrzeug berücksichtigt',
+                '♻️ Personal umsortieren: nimmt falsch eingeteiltes Fachpersonal von Fahrzeugen und füllt danach alles passend neu auf',
+            ],
+        },
+        {
+            version: 15, date: '07.11.2026', title: 'Personal holen',
+            items: [
+                '🔀 Auf der Wachen-Seite und im Werkzeuge-Menü: Personal von einer anderen Wache übernehmen',
+                'Quellwache, Anzahl und Ausbildung wählen; standardmäßig nur Leute, die auf keinem Fahrzeug sitzen',
+                'Beachtet das Wochenlimit und das Minimum der Quellwache, fragt vor dem Verschieben nach, nie Coins',
+            ],
+        },
+        {
+            version: 14, date: '07.11.2026', title: 'Personal zuweisen direkt in der Wache',
+            items: ['👥 Auf der Wachen-Seite gibt es über der Fahrzeugliste wieder den Knopf „Personal zuweisen“ für alle Fahrzeuge dieser Wache'],
+        },
+        {
             version: 13, date: '06.11.2026', title: 'Sprechwunsch-Helfer für Gefangene',
             items: [
                 '🚔 Im Alarmfenster: für jeden FuStW mit Gefangenen wird die beste Zelle markiert (freie Zellen, Entfernung, Abgabe)',

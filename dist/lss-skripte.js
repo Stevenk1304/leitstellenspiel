@@ -1,5 +1,5 @@
 // AUTOMATISCH ERZEUGT von build.js – nicht von Hand bearbeiten, Änderungen gehören nach skripte/.
-// Enthält: gemeinsam.js, themes.js, fahrzeuge-umbenennen.js, personal-zuweisen.js, wachen-check.js, fahrzeug-uebersicht.js, personal-werben.js, auslastung.js, einsatz-helfer.js, dashboard.js, kauf-berater.js, sprechwunsch.js, schnellstart.js, changelog.js
+// Enthält: gemeinsam.js, themes.js, fahrzeuge-umbenennen.js, personal-zuweisen.js, personal-verschieben.js, wachen-check.js, fahrzeug-uebersicht.js, personal-werben.js, auslastung.js, einsatz-helfer.js, dashboard.js, kauf-berater.js, sprechwunsch.js, fahrzeugnamen-karte.js, schnellstart.js, changelog.js
 // ===== gemeinsam.js =====
 // Gemeinsame Hilfsfunktionen und das Fenster-Design für alle LSS-Skripte.
 // Muss im Lade-Skript als erstes @require stehen.
@@ -721,8 +721,10 @@ const lss = (() => {
         });
     }
 
-    // Wer soll zugewiesen werden? neededAtBuilding = Ausbildungen, die irgendein Fahrzeug der Wache braucht
-    function pick(personnel, req, max, neededAtBuilding) {
+    // Wer soll zugewiesen werden?
+    // neededAtBuilding = Ausbildungen, die irgendein Fahrzeug (oder Anhänger) der Wache braucht
+    // knownKeys = alle Ausbildungen, die die Fahrzeugliste überhaupt kennt
+    function pick(personnel, req, max, neededAtBuilding, knownKeys) {
         const assigned = personnel.filter(p => p.assigned);
         const free = personnel.filter(p => p.btn && !p.assigned && !p.elsewhere);
         let slots = max - assigned.length;
@@ -746,9 +748,11 @@ const lss = (() => {
             const have = assigned.filter(p => p.keys.includes(key)).length;
             take(free.filter(p => p.keys.includes(key)), n - have);
         }
-        // Restliche Plätze: erst Personal ohne Ausbildung, dann Personal, dessen Ausbildung hier niemand braucht
+        // Restliche Plätze: erst Personal ohne Ausbildung. Ausgebildete Leute nur, wenn sicher ist, dass
+        // ihre Ausbildung an dieser Wache kein Fahrzeug braucht. Kennt die Fahrzeugliste eine Ausbildung
+        // nicht, bleibt die Person sicherheitshalber frei.
         take(free.filter(p => !p.keys.length), slots);
-        take(free.filter(p => p.keys.length && !hasAny(p, neededAtBuilding)), slots);
+        take(free.filter(p => p.keys.length && p.keys.every(k => knownKeys.has(k)) && !hasAny(p, neededAtBuilding)), slots);
         return picks;
     }
 
@@ -762,12 +766,12 @@ const lss = (() => {
     }
 
     // Ein Fahrzeug auffüllen, gibt die Anzahl neu zugewiesener Personen zurück
-    async function fillVehicle(vehicle, req, max, neededAtBuilding, isCancelled) {
+    async function fillVehicle(vehicle, req, max, neededAtBuilding, knownKeys, isCancelled) {
         const frame = await openWorker(vehicle.id);
         try {
             const doc = () => frame.contentDocument;
             if (!doc()?.querySelector('#personal_table')) throw new Error('Keine Personalliste gefunden');
-            const picks = pick(readPersonnel(doc()), req, max, neededAtBuilding);
+            const picks = pick(readPersonnel(doc()), req, max, neededAtBuilding, knownKeys);
             let count = 0;
             for (const p of picks) {
                 if (isCancelled()) break;
@@ -784,11 +788,48 @@ const lss = (() => {
         }
     }
 
+    // Falsch eingeteiltes Personal von einem Fahrzeug nehmen: ausgebildete Leute, deren Ausbildung dieses
+    // Fahrzeug nicht braucht, die aber ein anderes Fahrzeug der Wache braucht (z.B. Pumpen-Leute auf dem GKW).
+    // Gibt die Anzahl entfernter Personen zurück.
+    async function cleanVehicle(vehicle, req, neededAtBuilding, knownKeys, isCancelled) {
+        const ownKeys = new Set([...req.all, ...Object.keys(req.min).filter(k => req.min[k] > 0)]);
+        const frame = await openWorker(vehicle.id);
+        try {
+            const doc = () => frame.contentDocument;
+            if (!doc()?.querySelector('#personal_table')) throw new Error('Keine Personalliste gefunden');
+            const misplaced = readPersonnel(doc()).filter(p => p.assigned && p.keys.length
+                && p.keys.every(k => knownKeys.has(k))
+                && !p.keys.some(k => ownKeys.has(k))
+                && p.keys.some(k => neededAtBuilding.has(k)));
+            let count = 0;
+            for (const p of misplaced) {
+                if (isCancelled()) break;
+                doc().querySelector(`#personal_${p.id} a.btn[personal_id]`)?.click();
+                const ok = await waitFor(() => {
+                    const btn = doc()?.querySelector(`#personal_${p.id} a.btn[personal_id]`);
+                    return btn && !btn.classList.contains('btn-assigned');
+                });
+                if (!ok) throw new Error(`${p.name}: Zuweisung ließ sich nicht entfernen`);
+                count++;
+                await lss.sleep(DELAY);
+            }
+            return count;
+        } finally {
+            frame.remove();
+        }
+    }
+
     // buildingId und vehicleId beide null: alle Fahrzeuge aller Wachen
-    async function buildPlan(buildingId, vehicleId) {
+    // resort: auch volle Fahrzeuge aufnehmen, weil dort falsch eingeteiltes Personal sitzen kann
+    async function buildPlan(buildingId, vehicleId, resort = false) {
         const [vehicles, types] = await Promise.all([lss.getJSON('/api/vehicles'), lss.getVehicleTypes()]);
         const selected = vehicles.filter(v =>
             vehicleId !== null ? v.id === vehicleId : buildingId === null || v.building_id === buildingId);
+
+        const knownKeys = new Set();
+        for (const type of Object.values(types)) {
+            for (const school of Object.values(type?.staff?.training ?? {})) Object.keys(school).forEach(k => knownKeys.add(k));
+        }
 
         // Pro Wache: welche Ausbildungen braucht irgendein Fahrzeug dort?
         const neededByBuilding = {};
@@ -798,29 +839,46 @@ const lss = (() => {
             [...req.all, ...Object.keys(req.min)].forEach(k => set.add(k));
         }
 
+        const maxOf = v => {
+            const type = types[v.vehicle_type];
+            return v.max_personnel_override ?? type?.maxPersonnel ?? type?.staff?.max ?? 0;
+        };
+        const plans = new Map(vehicles.map(v => [v.id, { vehicle: v, max: maxOf(v), req: requirements(types[v.vehicle_type], maxOf(v)) }]));
+
+        // Anhänger und Abrollbehälter haben keine eigene Besatzung: ihre Ausbildung (z.B. Wasserschaden/Pumpen
+        // beim Anh SwPu, Notstrom beim NEA200) muss das Personal des Zugfahrzeugs mitbringen
+        for (const v of vehicles) {
+            const tow = plans.get(v.tractive_vehicle_id ?? v.tractive_vehicle?.id);
+            if (!tow || maxOf(v) > 0 || !tow.max) continue;
+            const trailerReq = requirements(types[v.vehicle_type], tow.max);
+            for (const key of trailerReq.all) tow.req.min[key] = Math.max(tow.req.min[key] ?? 0, tow.max);
+            for (const [key, n] of Object.entries(trailerReq.min)) tow.req.min[key] = Math.max(tow.req.min[key] ?? 0, n);
+        }
+
         return {
             neededByBuilding,
+            knownKeys,
             items: selected
                 .map(v => {
-                    const type = types[v.vehicle_type];
-                    const max = v.max_personnel_override ?? type?.maxPersonnel ?? type?.staff?.max ?? 0;
-                    const req = requirements(type, max);
-                    return { vehicle: v, max, req, current: v.assigned_personnel_count ?? 0, trained: req.all.size > 0 };
+                    const p = plans.get(v.id);
+                    const trained = p.req.all.size > 0 || Object.values(p.req.min).some(n => n > 0);
+                    return { ...p, current: v.assigned_personnel_count ?? 0, trained };
                 })
-                .filter(p => p.max > 0 && p.current < p.max)
+                .filter(p => p.max > 0 && (resort || p.current < p.max))
                 // Fahrzeuge mit Ausbildungspflicht zuerst, damit sie ihr Fachpersonal sicher bekommen
                 .sort((a, b) => b.trained - a.trained || a.vehicle.id - b.vehicle.id),
         };
     }
 
-    function showDialog({ items, neededByBuilding }) {
+    function showDialog({ items, neededByBuilding, knownKeys }, resort = false) {
         const label = p => `${p.current} / ${p.max} Personal`;
+        if (resort) return showResortDialog({ items, neededByBuilding, knownKeys }, label);
         lss.openDialog({
             title: 'Personal zuweisen',
             count: `${items.length} Fahrzeug${items.length === 1 ? '' : 'e'}`,
             rows: items.map(p => ({ left: p.vehicle.caption, right: label(p) })),
             empty: 'Alle Fahrzeuge sind schon voll besetzt.',
-            hint: 'Es wird nur freies Personal der jeweiligen Wache zugewiesen, das zur Ausbildung des Fahrzeugs passt.',
+            hint: 'Es wird nur freies Personal der jeweiligen Wache zugewiesen. Ausgebildete Leute bleiben für Fahrzeuge frei, die ihre Ausbildung brauchen (auch fürs Zugfahrzeug eines Anhängers).',
             startLabel: 'Personal zuweisen',
             async run(ui) {
                 let added = 0, failed = 0;
@@ -829,7 +887,7 @@ const lss = (() => {
                     ui.busy(i);
                     try {
                         const needed = neededByBuilding[p.vehicle.building_id] ?? new Set();
-                        const n = await fillVehicle(p.vehicle, p.req, p.max, needed, ui.cancelled);
+                        const n = await fillVehicle(p.vehicle, p.req, p.max, needed, knownKeys, ui.cancelled);
                         p.current += n;
                         ui.setRight(i, label(p));
                         if (n) ui.done(i, 'ok', `+${n}`);
@@ -846,9 +904,60 @@ const lss = (() => {
         });
     }
 
-    async function start(buildingId, vehicleId) {
+    // Erst überall falsch eingeteiltes Personal entfernen, dann alle Fahrzeuge neu auffüllen
+    function showResortDialog({ items, neededByBuilding, knownKeys }, label) {
+        lss.openDialog({
+            title: 'Personal umsortieren',
+            count: `${items.length} Fahrzeug${items.length === 1 ? '' : 'e'}`,
+            rows: items.map(p => ({ left: p.vehicle.caption, right: label(p) })),
+            empty: 'Keine Fahrzeuge mit Besatzung.',
+            hint: 'Schritt 1: Ausgebildete Leute kommen von Fahrzeugen runter, die ihre Ausbildung nicht brauchen, wenn ein anderes Fahrzeug der Wache sie braucht (z.B. Pumpen-Leute vom GKW). Schritt 2: Alle Fahrzeuge werden wieder passend aufgefüllt.',
+            startLabel: 'Umsortieren',
+            async run(ui) {
+                const removed = items.map(() => 0);
+                const errors = items.map(() => null);
+                let failed = 0;
+                const needed = p => neededByBuilding[p.vehicle.building_id] ?? new Set();
+                for (let i = 0; i < items.length && !ui.cancelled(); i++) {
+                    const p = items[i];
+                    ui.busy(i);
+                    try {
+                        removed[i] = await cleanVehicle(p.vehicle, p.req, needed(p), knownKeys, ui.cancelled);
+                        p.current -= removed[i];
+                        ui.setRight(i, label(p));
+                    } catch (e) {
+                        errors[i] = e.message;
+                    }
+                    ui.progress((i + 1) / 2, `Schritt 1: ${i + 1} von ${items.length} Fahrzeugen geprüft · ${removed.reduce((a, b) => a + b, 0)} entfernt`);
+                }
+                let added = 0;
+                for (let i = 0; i < items.length && !ui.cancelled(); i++) {
+                    const p = items[i];
+                    ui.busy(i);
+                    let n = 0;
+                    try {
+                        if (!errors[i] && p.current < p.max) n = await fillVehicle(p.vehicle, p.req, p.max, needed(p), knownKeys, ui.cancelled);
+                    } catch (e) {
+                        errors[i] = e.message;
+                    }
+                    p.current += n;
+                    added += n;
+                    ui.setRight(i, label(p));
+                    const text = [removed[i] ? `−${removed[i]}` : '', n ? `+${n}` : ''].filter(Boolean).join(' ');
+                    if (errors[i]) { ui.done(i, 'err', '!', errors[i]); failed++; }
+                    else if (text) ui.done(i, 'ok', text);
+                    else ui.done(i, 'skip', '–', p.current >= p.max ? 'Passt schon' : 'Kein passendes freies Personal');
+                    ui.progress((items.length + i + 1) / 2, `Schritt 2: ${i + 1} von ${items.length} Fahrzeugen · ${added} zugewiesen`);
+                }
+                const total = removed.reduce((a, b) => a + b, 0);
+                return `Fertig! ${total} Person${total === 1 ? '' : 'en'} umgesetzt, ${added} zugewiesen${failed ? `, ${failed} Fehler` : ''}.`;
+            },
+        });
+    }
+
+    async function start(buildingId, vehicleId, resort = false) {
         try {
-            showDialog(await buildPlan(buildingId, vehicleId));
+            showDialog(await buildPlan(buildingId, vehicleId, resort), resort);
         } catch (e) {
             lss.report('Personal zuweisen', e);
         }
@@ -860,12 +969,297 @@ const lss = (() => {
 
     lss.addTool({ label: '👥 Personal zuweisen', scope: 'building', order: 30, run: id => start(id, null) });
     lss.addTool({ label: '👥 Personal zuweisen (alle Wachen)', scope: 'all', order: 30, run: () => start(null, null) });
+    lss.addTool({ label: '♻️ Personal umsortieren', scope: 'building', order: 31, run: id => start(id, null, true) });
+
+    // Wachen-Seite: alle Fahrzeuge dieser Wache, Knopf direkt über der Fahrzeugliste
+    const building = location.pathname.match(/^\/buildings\/(\d+)\/?$/);
+    const vehicleTable = document.querySelector('#vehicle_table');
+    if (building && vehicleTable) {
+        lss.addPageButton(vehicleTable, '👥 Personal zuweisen', () => start(Number(building[1]), null));
+        lss.addPageButton(vehicleTable, '♻️ Personal umsortieren', () => start(Number(building[1]), null, true));
+    }
 
     // Zuweisungsseite: nur dieses Fahrzeug
     const assignment = location.pathname.match(/^\/vehicles\/(\d+)\/zuweisung\/?$/);
     const personnelTable = document.querySelector('#personal_table');
     if (assignment && personnelTable) {
         lss.addPageButton(personnelTable, '👥 Passendes Personal automatisch zuweisen', () => start(null, Number(assignment[1])));
+    }
+})();
+
+// ===== personal-verschieben.js =====
+// LSS Personal verschieben
+// Holt Personal von einer anderen Wache auf diese Wache, über die Funktion "Personal übernehmen" des Spiels
+// (Seite "Neue Leute werben"). Standardmäßig nur Leute, die auf keinem Fahrzeug sitzen; Filter nach
+// Ausbildung, einzeln an- und abwählbar. Beachtet das Wochenlimit und das Minimum der Quellwache.
+// Verschieben lässt sich im Spiel NICHT rückgängig machen, deshalb immer mit Rückfrage. Nie Coins.
+// Wird über tampermonkey-loader.user.js geladen, braucht gemeinsam.js.
+
+(function () {
+    'use strict';
+
+    const STYLE = `
+        /* Nur die Personenliste scrollt, Formular und Knöpfe unten bleiben immer sichtbar */
+        .lssr-body { display:flex; flex-direction:column; min-height:0; flex:1; }
+        .pv-body { overflow:hidden; flex:1; min-height:0; display:flex; flex-direction:column; }
+        .pv-body > .pv-form, .pv-body > .pv-info, .pv-body > .lssr-foot { flex-shrink:0; }
+        .pv-form { display:grid; grid-template-columns:auto 1fr; gap:8px 12px; align-items:center; padding:14px 18px; border-bottom:1px solid #3a3f47; background:#1c1f23; font-size:13px; }
+        .pv-form label { margin:0; color:#aab0b8; font-weight:normal; }
+        .pv-form select, .pv-form input[type=number] { background:#2a2e34; border:1px solid #3a3f47; border-radius:6px; color:#e6e6e6; padding:6px 8px; font-size:13px; max-width:100%; }
+        /* Das Spiel färbt Auswahlfelder selbst; mit !important bleibt die Schrift hell */
+        .pv-form select, .pv-form input[type=number] { background:#2a2e34 !important; color:#e6e6e6 !important; -webkit-text-fill-color:#e6e6e6; }
+        .pv-form select option { background:#2a2e34 !important; color:#e6e6e6 !important; }
+        .pv-form input[type=number] { width:90px; }
+        .pv-check { display:flex; align-items:center; gap:6px; grid-column:2; color:#aab0b8; }
+        .pv-check input { margin:0; }
+        .pv-info { padding:8px 18px; color:#aab0b8; font-size:13px; border-bottom:1px solid #3a3f47; }
+        .pv-info b { color:#fff; }
+        .pv-warn { color:#f0b75e; }
+        .pv-list { overflow:auto; flex:1 1 auto; min-height:80px; }
+        .pv-row { display:grid; grid-template-columns:24px minmax(0,1fr) minmax(0,1fr); gap:8px; align-items:center; padding:6px 18px; border-bottom:1px solid #2e3238; font-size:13px; cursor:pointer; margin:0; font-weight:normal; color:#e6e6e6; }
+        .pv-row:hover { background:#2a2e34; }
+        .pv-row input { margin:0; }
+        .pv-edu { color:#aab0b8; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .pv-bound { color:#8b929c; font-size:12px; }
+        .pv-empty { padding:24px 18px; color:#8b929c; text-align:center; }
+    `;
+
+    function injectStyle() {
+        if (document.getElementById('pv-style')) return;
+        const style = document.createElement('style');
+        style.id = 'pv-style';
+        style.textContent = STYLE;
+        document.head.append(style);
+    }
+
+    const loadDoc = async url => {
+        const r = await fetch(url, { credentials: 'include' });
+        if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
+        return new DOMParser().parseFromString(await r.text(), 'text/html');
+    };
+
+    // Erste Zahl im Text; nichts Lesbares zählt als 0, damit im Zweifel nichts verschoben wird
+    const firstNumber = text => {
+        const m = String(text ?? '').match(/d+/);
+        return m ? Number(m[0]) : 0;
+    };
+
+    // Werbeseite der Zielwache: Quellwachen, Wochenlimit, Formular-Adresse
+    async function loadTargetInfo(targetId) {
+        const doc = await loadDoc(`/buildings/${targetId}/hire`);
+        const form = doc.querySelector('form[action*="/adopt"]');
+        // Kein Fehler im Skript, sondern eine Spielregel: dann zeigt start() eine Erklärung statt eines Fehlers
+        if (!form) return null;
+        const sources = [...form.querySelectorAll('.personal-select-heading[building_id]')].map(h => {
+            const spans = h.querySelectorAll('span');
+            const counts = spans[1]?.textContent.match(/Derzeit:\s*(\d+).*?Mindestens:\s*(\d+)/i);
+            return {
+                id: h.getAttribute('building_id'),
+                name: spans[0]?.textContent.trim() ?? h.textContent.trim(),
+                url: h.getAttribute('href'),
+                current: counts ? Number(counts[1]) : null,
+                min: counts ? Number(counts[2]) : 0,
+            };
+        });
+        return {
+            action: form.getAttribute('action'),
+            remaining: firstNumber((form.querySelector('#schooling_free') ?? doc.querySelector('#schooling_free'))?.textContent),
+            sources,
+        };
+    }
+
+    // Personenliste einer Quellwache; nur Leute mit Häkchen sind gerade verschiebbar
+    async function loadPeople(source) {
+        const doc = await loadDoc(source.url);
+        return [...doc.querySelectorAll('tbody tr')].map(row => {
+            const box = row.querySelector('input.schooling_checkbox[name="personal_ids[]"]');
+            if (!box) return null;
+            const bound = row.cells[3]?.querySelector('a[href^="/vehicles/"]');
+            return {
+                id: box.value,
+                name: (row.cells[1]?.textContent ?? '').replace(/\s+/g, ' ').trim(),
+                education: (row.cells[2]?.textContent ?? '').replace(/\s+/g, ' ').trim(),
+                bound: bound ? bound.textContent.trim() : '',
+            };
+        }).filter(Boolean);
+    }
+
+    async function adopt(action, ids) {
+        const body = new URLSearchParams({ utf8: '✓', authenticity_token: lss.csrfToken() ?? '' });
+        ids.forEach(id => body.append('personal_ids[]', id));
+        body.append('commit', 'Personal übernehmen');
+        const r = await fetch(action, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body,
+        });
+        if (!r.ok) throw new Error(`Personal übernehmen: HTTP ${r.status}`);
+        // Meldung des Spiels (z.B. "Limit erreicht") aus der Antwortseite lesen
+        const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
+        return [...doc.querySelectorAll('.alert')].map(a => a.textContent.replace(/[×s]+/g, ' ').trim()).filter(Boolean).join(' · ');
+    }
+
+    async function start(targetId) {
+        injectStyle();
+        const [info, buildings] = await Promise.all([loadTargetInfo(targetId), lss.getJSON('/api/buildings').catch(() => [])]);
+        const target = buildings.find(b => String(b.id) === String(targetId));
+        const e = lss.escapeHtml;
+        if (!info) {
+            lss.openPanel({
+                title: `🔀 Personal holen${target ? `: ${target.caption}` : ''}`,
+                count: 'nicht möglich',
+                body: `
+                    <div style="padding:16px 18px;color:#cfd3d8;font-size:13px;line-height:1.6">
+                        Das Spiel bietet für diese Wache gerade <b style="color:#fff">kein „Personal übernehmen“</b> an.
+                        Auf ihrer Seite „Neue Leute werben“ fehlt dieser Bereich.<br><br>
+                        Mögliche Gründe:
+                        <ul style="margin:6px 0 0;padding-left:20px">
+                            <li>Für diesen Wachentyp erlaubt das Spiel kein Verschieben (z.B. Kleinwachen, Schulen, Krankenhäuser).</li>
+                            <li>Es gibt keine andere Wache desselben Typs, von der Personal kommen kann.</li>
+                        </ul>
+                    </div>`,
+            });
+            return;
+        }
+        const need = target ? Math.max(0, (target.personal_count_target ?? 0) - (target.personal_count ?? 0)) : 0;
+        // Quellwachen mit dem meisten Personal über dem Minimum zuerst
+        const sources = [...info.sources].sort((a, b) => ((b.current ?? 0) - b.min) - ((a.current ?? 0) - a.min));
+
+        const panel = lss.openPanel({
+            title: `🔀 Personal holen${target ? `: ${target.caption}` : ''}`,
+            count: `Noch verschiebbar: ${info.remaining}`,
+            body: `
+                <div class="pv-body">
+                    <div class="pv-form">
+                        <label>Von Wache</label>
+                        <select class="pv-source">${sources.map(s => `<option value="${e(s.id)}">${e(s.name)} (${s.current ?? '?'} Personal, mind. ${s.min})</option>`).join('')}</select>
+                        <label>Anzahl</label>
+                        <input type="number" class="pv-count" min="1" max="${info.remaining}" value="${Math.max(1, Math.min(need || info.remaining, info.remaining))}">
+                        <label>Ausbildung</label>
+                        <select class="pv-edu-filter"><option value="*">egal</option><option value="">ohne Ausbildung</option></select>
+                        <label class="pv-check"><input type="checkbox" class="pv-bound-ok"> auch Leute, die fest an ein Fahrzeug gebunden sind</label>
+                    </div>
+                    <div class="pv-info"></div>
+                    <div class="pv-list"><div class="pv-empty">Lade Personal …</div></div>
+                    <div class="lssr-foot">
+                        <div class="lssr-status pv-status">${need ? `Diese Wache liegt <b>${need}</b> unter ihrem Personal-Ziel.` : ''}</div>
+                        <div class="lssr-actions">
+                            <button class="lssr-btn lssr-btn-ghost pv-close">Schließen</button>
+                            <button class="lssr-btn lssr-btn-primary pv-go" disabled>Personal übernehmen</button>
+                        </div>
+                    </div>
+                </div>`,
+        });
+        const root = panel.root;
+        const $ = sel => root.querySelector(sel);
+        let people = [];
+        let source = sources[0];
+
+        if (!info.remaining) $('.pv-status').innerHTML = '<span class="pv-warn">Diese Woche kann kein Personal mehr verschoben werden (Limit erreicht). Ab Montag wieder.</span>';
+        if (!sources.length) {
+            $('.pv-list').innerHTML = '<div class="pv-empty">Keine Wache, von der Personal übernommen werden kann.</div>';
+            return;
+        }
+
+        const selectedIds = () => [...root.querySelectorAll('.pv-list input:checked')].map(i => i.value);
+        // Höchstens so viele, wie Limit und Minimum der Quellwache zulassen
+        const maxAllowed = () => Math.max(0, Math.min(info.remaining, (source.current ?? Infinity) - source.min));
+
+        const updateInfo = () => {
+            const n = selectedIds().length;
+            const max = maxAllowed();
+            $('.pv-info').innerHTML = `Ausgewählt: <b>${n}</b> · erlaubt: <b>${max}</b>${n > max ? ' · <span class="pv-warn">zu viele ausgewählt</span>' : ''}`;
+            $('.pv-go').disabled = !n || n > max;
+            $('.pv-go').textContent = n ? `${n} Person${n === 1 ? '' : 'en'} übernehmen` : 'Personal übernehmen';
+        };
+
+        // Liste nach Filter zeigen und die ersten "Anzahl" Personen anhaken
+        const renderList = () => {
+            const edu = $('.pv-edu-filter').value;
+            const boundOk = $('.pv-bound-ok').checked;
+            const want = Math.min(Number($('.pv-count').value) || 0, maxAllowed());
+            const fits = people.filter(p => (boundOk || !p.bound) && (edu === '*' || p.education === edu));
+            $('.pv-list').innerHTML = fits.length
+                ? fits.map((p, i) => `
+                    <label class="pv-row">
+                        <input type="checkbox" value="${e(p.id)}" ${i < want ? 'checked' : ''}>
+                        <span>${e(p.name)}${p.bound ? ` <span class="pv-bound">· ${e(p.bound)}</span>` : ''}</span>
+                        <span class="pv-edu">${e(p.education || '–')}</span>
+                    </label>`).join('')
+                : '<div class="pv-empty">Niemand passt zum Filter.</div>';
+            updateInfo();
+        };
+
+        const loadSource = async () => {
+            source = sources.find(s => s.id === $('.pv-source').value) ?? sources[0];
+            $('.pv-list').innerHTML = '<div class="pv-empty">Lade Personal …</div>';
+            try {
+                people = await loadPeople(source);
+            } catch (err) {
+                lss.report('Personal verschieben', err);
+                $('.pv-list').innerHTML = '<div class="pv-empty">Personal konnte nicht geladen werden.</div>';
+                return;
+            }
+            const educations = [...new Set(people.map(p => p.education).filter(Boolean))].sort();
+            const keep = $('.pv-edu-filter').value;
+            $('.pv-edu-filter').innerHTML = '<option value="*">egal</option><option value="">ohne Ausbildung</option>'
+                + educations.map(x => `<option value="${e(x)}">${e(x)}</option>`).join('');
+            $('.pv-edu-filter').value = ['*', '', ...educations].includes(keep) ? keep : '*';
+            renderList();
+        };
+
+        $('.pv-source').addEventListener('change', loadSource);
+        $('.pv-edu-filter').addEventListener('change', renderList);
+        $('.pv-bound-ok').addEventListener('change', renderList);
+        $('.pv-count').addEventListener('input', renderList);
+        $('.pv-list').addEventListener('change', updateInfo);
+        $('.pv-close').addEventListener('click', panel.close);
+        $('.pv-go').addEventListener('click', async () => {
+            const ids = selectedIds();
+            if (!ids.length || ids.length > maxAllowed()) return;
+            const ok = confirm(`${ids.length} Person${ids.length === 1 ? '' : 'en'} von „${source.name}“ nach „${target?.caption ?? 'diese Wache'}“ verschieben?\n\nAchtung: Das kann im Spiel NICHT rückgängig gemacht werden.`);
+            if (!ok) return;
+            $('.pv-go').disabled = true;
+            $('.pv-status').textContent = 'Prüfe Wochenlimit …';
+            try {
+                // Limit direkt vor dem Verschieben frisch vom Spiel holen, das Fenster kann veraltet sein
+                const fresh = await loadTargetInfo(targetId);
+                if (!fresh || fresh.remaining < ids.length) {
+                    $('.pv-status').innerHTML = `<span class="pv-warn">Laut Spiel sind diese Woche nur noch <b>${fresh?.remaining ?? 0}</b> verschiebbar. Es wurde nichts verschoben.</span>`;
+                    return;
+                }
+                $('.pv-status').textContent = 'Verschiebe …';
+                const message = await adopt(fresh.action, ids);
+                // Nachzählen: wer ist noch an der Quellwache?
+                const still = new Set((await loadPeople(source)).map(p => p.id));
+                const moved = ids.filter(id => !still.has(id)).length;
+                if (!moved) {
+                    $('.pv-status').innerHTML = `<span class="pv-warn">Das Spiel hat niemanden verschoben.${message ? ` Meldung: ${e(message)}` : ''}</span>`;
+                    return;
+                }
+                $('.pv-status').innerHTML = `<b style="color:#5cd178">✓ ${moved} Person${moved === 1 ? '' : 'en'} übernommen.</b>${moved < ids.length ? ` <span class="pv-warn">(${ids.length - moved} nicht)</span>` : ''} Die Seite wird neu geladen.`;
+                setTimeout(() => location.reload(), 2500);
+            } catch (err) {
+                lss.report('Personal verschieben', err);
+                $('.pv-status').textContent = 'Fehler beim Verschieben, bitte im Spiel prüfen.';
+            }
+        });
+
+        await loadSource();
+    }
+
+    lss.actions.movePersonnel = start;
+
+    if (lss.isWorkerFrame) return;
+
+    lss.addTool({ label: '🔀 Personal holen', scope: 'building', order: 32, run: id => start(id) });
+
+    // Wachen-Seite: Knopf direkt über der Fahrzeugliste
+    const building = location.pathname.match(/^\/buildings\/(\d+)\/?$/);
+    const vehicleTable = document.querySelector('#vehicle_table');
+    if (building && vehicleTable) {
+        lss.addPageButton(vehicleTable, '🔀 Personal holen', lss.safe('Personal verschieben', () => start(building[1])));
     }
 })();
 
@@ -2305,6 +2699,25 @@ const lss = (() => {
     // Wie oft die Einsatzliste der Hauptseite nach neuen Einsätzen durchsucht wird
     const SCAN_SECONDS = 60;
 
+    // Wo man ein Fahrzeug kaufen kann: Gebäudetyp-Nummern des Spiels → kurzer Name.
+    // Kleinwachen zählen wie die normale Wache, Komplexe werden nicht extra genannt.
+    const BUILDING_NAMES = {
+        0: 'Feuerwache', 18: 'Feuerwache', 2: 'Rettungswache', 20: 'Rettungswache', 5: 'RTH-Station',
+        6: 'Polizeiwache', 19: 'Polizeiwache', 9: 'THW', 11: 'Bereitschaftspolizei', 12: 'SEG',
+        13: 'Polizeihubschrauber-Station', 15: 'Wasserrettung', 17: 'Polizei-Sondereinheiten',
+        21: 'Rettungshundestaffel', 24: 'Reiterstaffel', 25: 'Bergrettung', 26: 'Seenotrettung',
+        28: 'Seenot-Hubschrauberstation', 29: 'Autobahnpolizei',
+    };
+
+    // Alle Wachenarten, an denen irgendein passendes Fahrzeug gekauft werden kann
+    function whereToBuy(typeIds, types) {
+        const names = new Set();
+        for (const t of typeIds) {
+            for (const b of types[t]?.possibleBuildings ?? []) if (BUILDING_NAMES[b]) names.add(BUILDING_NAMES[b]);
+        }
+        return [...names];
+    }
+
     const now = () => Date.now();
     const cutoff = () => now() - KEEP_DAYS * 864e5;
     const load = key => { try { return GM_getValue(key, []); } catch (e) { return []; } };
@@ -2348,6 +2761,7 @@ const lss = (() => {
         .kb-table td { padding:7px 10px; border-bottom:1px solid #2e3238; text-align:right; font-variant-numeric:tabular-nums; }
         .kb-table tr:hover td { background:#2a2e34; }
         .kb-name { color:#fff; font-weight:600; }
+        .kb-where { display:block; color:#8b929c; font-size:11px; font-weight:400; margin-top:2px; }
         .kb-zero { color:#4b5058; }
         .kb-badge { display:inline-block; border-radius:999px; padding:2px 10px; font-size:11px; font-weight:700; white-space:nowrap; }
         .kb-buy { background:#c9302c; color:#fff; }
@@ -2366,7 +2780,7 @@ const lss = (() => {
     }
 
     // Bedarf je Anforderung: in wie vielen Einsätzen gebraucht (Wahrscheinlichkeit anteilig) und wie viele auf einmal
-    function analyse(missions, shortages, missionTypes, vehicles, REQ) {
+    function analyse(missions, shortages, missionTypes, vehicles, REQ, types) {
         const stats = {};
         const get = key => stats[key] ??= { key, missions: 0, peak: 0, shortages: 0 };
         let known = 0;
@@ -2397,7 +2811,7 @@ const lss = (() => {
             const tooFew = have < s.peak && s.missions >= 2;
             const score = s.shortages * 5 + s.missions / Math.max(have, 0.5) + (tooFew ? 10 : 0);
             const verdict = have === 0 || tooFew ? 'buy' : s.shortages > 0 ? 'more' : 'ok';
-            return { ...s, label, have, score, verdict };
+            return { ...s, label, have, score, verdict, where: whereToBuy(typeIds, types) };
         });
         rows.sort((a, b) => ({ buy: 0, more: 1, ok: 2 }[a.verdict] - { buy: 0, more: 1, ok: 2 }[b.verdict]) || b.score - a.score);
         return { rows, known };
@@ -2406,11 +2820,13 @@ const lss = (() => {
     async function start() {
         const REQ = lss.actions.missionRequirements;
         if (!REQ || !lss.actions.missionTypes) throw new Error('Einsatz-Helfer ist nicht geladen');
-        const [missionTypes, vehicles] = await Promise.all([lss.actions.missionTypes(), lss.getJSON('/api/vehicles')]);
+        const [missionTypes, vehicles, types] = await Promise.all([
+            lss.actions.missionTypes(), lss.getJSON('/api/vehicles'), lss.getVehicleTypes().catch(() => ({})),
+        ]);
         scanMissionList();
         const missions = load(MISSIONS_KEY).filter(x => x.t >= cutoff());
         const shortages = load(SHORTAGES_KEY).filter(x => x.t >= cutoff());
-        const { rows, known } = analyse(missions, shortages, missionTypes, vehicles, REQ);
+        const { rows, known } = analyse(missions, shortages, missionTypes, vehicles, REQ, types);
         const since = missions.length ? new Date(Math.min(...missions.map(x => x.t))).toLocaleDateString('de-DE') : null;
         const e = lss.escapeHtml;
         const fmt = n => (Math.round(n * 10) / 10).toLocaleString('de-DE');
@@ -2429,7 +2845,7 @@ const lss = (() => {
                         <thead><tr><th>Fahrzeug</th><th title="In wie vielen Einsätzen gebraucht (Wahrscheinlichkeiten anteilig)">Einsätze</th><th title="Höchstens auf einmal gebraucht">Max.</th><th>Du hast</th><th title="Kein freies Fahrzeug bei „Fehlendes auswählen“">Engpässe</th><th></th></tr></thead>
                         <tbody>${rows.map(r => `
                             <tr>
-                                <td class="kb-name">${e(r.label)}</td>
+                                <td class="kb-name">${e(r.label)}${r.where.length ? `<span class="kb-where">🏠 ${e(r.where.join(', '))}</span>` : ''}</td>
                                 <td>${fmt(r.missions)}</td>
                                 <td>${r.peak}</td>
                                 <td class="${r.have ? '' : 'kb-short'}">${r.have}</td>
@@ -2724,6 +3140,78 @@ const lss = (() => {
     lss.safe('Sprechwunsch-Helfer (Gefangene)', initMission)();
 })();
 
+// ===== fahrzeugnamen-karte.js =====
+// LSS Fahrzeugnamen auf der Karte ausblenden
+// Das Spiel blendet die Namen manchmal wieder ein, obwohl sie in den Einstellungen aus sind
+// (die Spiel-Variable vehicle_label steht dann auf true). Dieses Skript hält sie dauerhaft aus.
+// Wird über tampermonkey-loader.user.js geladen, braucht gemeinsam.js.
+
+(function () {
+    'use strict';
+
+    const KEY = 'lss.hideVehicleLabels';
+    const isOn = () => { try { return GM_getValue(KEY, true); } catch (e) { return true; } };
+
+    // Läuft direkt in der Spielseite, weil Tampermonkey die Spiel-Variablen sonst nicht ändern kann.
+    // Schaut alle 2 Sekunden nach und nimmt nur die festen Namensschilder der Fahrzeuge weg.
+    const PAGE_CODE = `(function () {
+        function vehicleLayers() {
+            var list = [];
+            if (Array.isArray(window.vehicle_markers)) list = window.vehicle_markers.slice();
+            if (window.map && typeof window.map.eachLayer === 'function') {
+                window.map.eachLayer(function (l) { if (l && l.vehicle_id !== undefined && list.indexOf(l) < 0) list.push(l); });
+            }
+            return list;
+        }
+        function enforce() {
+            if (document.documentElement.getAttribute('data-lss-hide-labels') !== '1') return;
+            if (window.vehicle_label) window.vehicle_label = false;
+            if (window.vehicle_label_backup) window.vehicle_label_backup = false;
+            vehicleLayers().forEach(function (m) {
+                var t = m && typeof m.getTooltip === 'function' && m.getTooltip();
+                if (t && t.options && t.options.permanent) m.unbindTooltip();
+            });
+        }
+        enforce();
+        setInterval(enforce, 2000);
+    })();`;
+
+    function apply(on) {
+        document.documentElement.setAttribute('data-lss-hide-labels', on ? '1' : '0');
+    }
+
+    function note(text) {
+        const el = document.createElement('div');
+        el.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:100000;background:#22252a;color:#e6e6e6;border:1px solid #3a3f47;border-left:4px solid var(--lssr-accent,#c9302c);border-radius:8px;padding:10px 12px;box-shadow:0 10px 30px rgba(0,0,0,.5);font:13px "Helvetica Neue",Arial,sans-serif;max-width:340px';
+        el.textContent = text;
+        document.body.append(el);
+        setTimeout(() => el.remove(), 4000);
+    }
+
+    function toggle() {
+        const on = !isOn();
+        try { GM_setValue(KEY, on); } catch (e) { /* kein Speicher */ }
+        apply(on);
+        note(on
+            ? '🏷️ Fahrzeugnamen auf der Karte bleiben jetzt ausgeblendet.'
+            : '🏷️ Fahrzeugnamen werden nicht mehr erzwungen ausgeblendet. Nach dem Neuladen gilt wieder die Spiel-Einstellung.');
+    }
+
+    lss.actions.toggleVehicleLabels = toggle;
+
+    if (lss.isWorkerFrame || window !== window.top) return;
+
+    lss.addTool({ label: '🏷️ Fahrzeugnamen auf Karte ein/aus', scope: 'all', order: 85, run: toggle });
+
+    // Nur auf der Hauptseite mit Karte
+    if (!document.getElementById('map')) return;
+    apply(isOn());
+    const script = document.createElement('script');
+    script.textContent = PAGE_CODE;
+    (document.head || document.documentElement).append(script);
+    script.remove();
+})();
+
 // ===== schnellstart.js =====
 // LSS Schnellstart-Leiste
 // Symbole der Lieblingswerkzeuge direkt in der Spiel-Leiste neben "Werkzeuge". Auswahl über
@@ -2815,6 +3303,29 @@ const lss = (() => {
 
     // Neueste zuerst; version muss bei jedem neuen Eintrag größer werden
     const CHANGELOG = [
+        {
+            version: 16, date: '07.11.2026', title: 'Fahrzeugnamen bleiben aus',
+            items: [
+                '🏷️ Die Fahrzeugnamen auf der Karte bleiben jetzt dauerhaft ausgeblendet, auch wenn das Spiel sie von selbst wieder einschaltet',
+                'Im Werkzeuge-Menü mit „Fahrzeugnamen auf Karte ein/aus“ abschaltbar',
+                '🛒 Was soll ich kaufen?: unter jedem Fahrzeug steht jetzt, an welcher Wache man es kaufen kann',
+                '👥 Personal zuweisen: ausgebildete Leute (z.B. Wasserschaden/Pumpen) landen nicht mehr auf Fahrzeugen ohne Ausbildungspflicht wie dem GKW',
+                '🚛 Anhänger: die Ausbildung, die ein Anhänger braucht (z.B. Anh SwPu, NEA200, Boote), wird jetzt beim Zugfahrzeug berücksichtigt',
+                '♻️ Personal umsortieren: nimmt falsch eingeteiltes Fachpersonal von Fahrzeugen und füllt danach alles passend neu auf',
+            ],
+        },
+        {
+            version: 15, date: '07.11.2026', title: 'Personal holen',
+            items: [
+                '🔀 Auf der Wachen-Seite und im Werkzeuge-Menü: Personal von einer anderen Wache übernehmen',
+                'Quellwache, Anzahl und Ausbildung wählen; standardmäßig nur Leute, die auf keinem Fahrzeug sitzen',
+                'Beachtet das Wochenlimit und das Minimum der Quellwache, fragt vor dem Verschieben nach, nie Coins',
+            ],
+        },
+        {
+            version: 14, date: '07.11.2026', title: 'Personal zuweisen direkt in der Wache',
+            items: ['👥 Auf der Wachen-Seite gibt es über der Fahrzeugliste wieder den Knopf „Personal zuweisen“ für alle Fahrzeuge dieser Wache'],
+        },
         {
             version: 13, date: '06.11.2026', title: 'Sprechwunsch-Helfer für Gefangene',
             items: [
@@ -2950,4 +3461,4 @@ const lss = (() => {
 })();
 
 /* exported LSS_BUILD */
-var LSS_BUILD = {"built":"2026-11-06T21:43:07.227Z","files":[["gemeinsam.js",4],["themes.js",482],["fahrzeuge-umbenennen.js",561],["personal-zuweisen.js",661],["wachen-check.js",873],["fahrzeug-uebersicht.js",1101],["personal-werben.js",1256],["auslastung.js",1363],["einsatz-helfer.js",1515],["dashboard.js",2069],["kauf-berater.js",2292],["sprechwunsch.js",2462],["schnellstart.js",2728],["changelog.js",2807]]};
+var LSS_BUILD = {"built":"2026-11-07T12:28:50.357Z","files":[["gemeinsam.js",4],["themes.js",482],["fahrzeuge-umbenennen.js",561],["personal-zuweisen.js",661],["personal-verschieben.js",991],["wachen-check.js",1267],["fahrzeug-uebersicht.js",1495],["personal-werben.js",1650],["auslastung.js",1757],["einsatz-helfer.js",1909],["dashboard.js",2463],["kauf-berater.js",2686],["sprechwunsch.js",2878],["fahrzeugnamen-karte.js",3144],["schnellstart.js",3216],["changelog.js",3295]]};

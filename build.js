@@ -13,7 +13,7 @@ const OUT = path.join(__dirname, 'dist', 'lss-skripte.js');
 const FIRST = ['gemeinsam.js', 'themes.js'];
 // Feste Reihenfolge für die bestehenden Werkzeuge; neue Dateien kommen alphabetisch dahinter
 const ORDER = [
-    'fahrzeuge-umbenennen.js', 'personal-zuweisen.js', 'wachen-check.js', 'fahrzeug-uebersicht.js',
+    'fahrzeuge-umbenennen.js', 'personal-zuweisen.js', 'personal-verschieben.js', 'wachen-check.js', 'fahrzeug-uebersicht.js',
     'personal-werben.js', 'auslastung.js', 'einsatz-helfer.js', 'dashboard.js', 'kauf-berater.js', 'sprechwunsch.js',
 ];
 // Brauchen die Liste aller Werkzeuge, deshalb zum Schluss
