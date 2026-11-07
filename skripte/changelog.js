@@ -10,6 +10,10 @@
     // Neueste zuerst; version muss bei jedem neuen Eintrag größer werden
     const CHANGELOG = [
         {
+            version: 19, date: '08.11.2026', title: 'Sprechwunsch-Helfer: Zellen im Fahrzeugfenster',
+            items: ['🚔 Auch im Fahrzeugfenster („Zelle wählen“) wird jetzt die beste Zelle markiert und kann mit „Anfahren“ direkt gewählt werden'],
+        },
+        {
             version: 18, date: '07.11.2026', title: 'Einsatz-Helfer liest Patientenwünsche',
             items: [
                 '🚑 Patienten werden jetzt richtig gezählt (auch wenn nur „3 Patienten“ dasteht), fehlende RTW erscheinen wieder',

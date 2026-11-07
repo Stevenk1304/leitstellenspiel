@@ -3222,7 +3222,9 @@ const lss = (() => {
         const heading = document.querySelector('#h2_sprechwunsch');
         if (!m || !heading) return;
         const vehicleId = m[1];
-        const list = targets();
+        // Krankenhäuser stehen in Tabellen, Zellen als Knöpfe ("Zelle wählen")
+        let list = targets();
+        if (!list.length) list = prisonButtons(document);
         if (!list.length) return;
         const choice = best(list);
         const kind = list[0].link.href.includes('/patient/') ? 'Krankenhaus' : 'Zelle';
@@ -3233,8 +3235,9 @@ const lss = (() => {
             noneText: `Kein ${kind === 'Krankenhaus' ? 'Krankenhaus mit passender Fachabteilung und freien Betten' : 'Ziel mit freien Zellen'} gefunden.`,
         });
         (heading.closest('.alert') ?? heading).after(box);
-        choice?.row.classList.add('sw-row-best');
-        interceptClicks(`${TARGET_LINK}, .sw-go`, () => vehicleId, () => box);
+        choice?.row?.classList.add('sw-row-best');
+        if (choice && !choice.row) choice.link.style.outline = '3px solid #2ea043';
+        interceptClicks(`${TARGET_LINK}, a[data-prison-id], .sw-go`, () => vehicleId, () => box);
     }
 
     // "Polizeistation Heringen(Freie Zellen: 2, Entfernung: 0,71 km, Abgabe an Besitzer: 0%)"
@@ -3256,6 +3259,30 @@ const lss = (() => {
                 tax: Number(m[4] ?? 0),
             });
         }
+        return list;
+    }
+
+    // Zellen-Knöpfe im Fahrzeugfenster; alles hinter der Überschrift "Verbandszellen" gehört dem Verband
+    function prisonButtons(root) {
+        const verband = [...root.querySelectorAll('h1,h2,h3,h4,h5,h6,b,strong,p,div,span,label')]
+            .find(el => !el.children.length && /^\s*Verbandszellen\s*:?\s*$/i.test(el.textContent));
+        const list = [];
+        const seen = new Set();
+        root.querySelectorAll('a[data-prison-id], a[href*="/gefangener/"], a[href*="/prisoner/"]').forEach(el => {
+            if (seen.has(el) || el.closest('.sw-box')) return;
+            seen.add(el);
+            const href = el.getAttribute('href') || '';
+            if (!href || href === '#') return;
+            const m = el.textContent.replace(/\s+/g, ' ').trim().match(PRISON_TEXT);
+            if (!m) return;
+            const own = !verband || !(verband.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING);
+            list.push({
+                link: el, row: null, own, dept: true, name: m[1].trim(),
+                free: Number(m[2]), max: null,
+                dist: parseFloat(m[3].replace(',', '.')),
+                tax: Number(m[4] ?? 0),
+            });
+        });
         return list;
     }
 
@@ -3453,6 +3480,10 @@ const lss = (() => {
     // Neueste zuerst; version muss bei jedem neuen Eintrag größer werden
     const CHANGELOG = [
         {
+            version: 19, date: '08.11.2026', title: 'Sprechwunsch-Helfer: Zellen im Fahrzeugfenster',
+            items: ['🚔 Auch im Fahrzeugfenster („Zelle wählen“) wird jetzt die beste Zelle markiert und kann mit „Anfahren“ direkt gewählt werden'],
+        },
+        {
             version: 18, date: '07.11.2026', title: 'Einsatz-Helfer liest Patientenwünsche',
             items: [
                 '🚑 Patienten werden jetzt richtig gezählt (auch wenn nur „3 Patienten“ dasteht), fehlende RTW erscheinen wieder',
@@ -3623,4 +3654,4 @@ const lss = (() => {
 })();
 
 /* exported LSS_BUILD */
-var LSS_BUILD = {"built":"2026-11-07T20:26:40.974Z","files":[["gemeinsam.js",4],["themes.js",482],["fahrzeuge-umbenennen.js",561],["personal-zuweisen.js",661],["personal-verschieben.js",992],["wachen-check.js",1268],["fahrzeug-uebersicht.js",1496],["personal-werben.js",1651],["auslastung.js",1758],["einsatz-helfer.js",1910],["dashboard.js",2612],["kauf-berater.js",2835],["sprechwunsch.js",3027],["fahrzeugnamen-karte.js",3293],["schnellstart.js",3365],["changelog.js",3444]]};
+var LSS_BUILD = {"built":"2026-11-07T23:27:03.277Z","files":[["gemeinsam.js",4],["themes.js",482],["fahrzeuge-umbenennen.js",561],["personal-zuweisen.js",661],["personal-verschieben.js",992],["wachen-check.js",1268],["fahrzeug-uebersicht.js",1496],["personal-werben.js",1651],["auslastung.js",1758],["einsatz-helfer.js",1910],["dashboard.js",2612],["kauf-berater.js",2835],["sprechwunsch.js",3027],["fahrzeugnamen-karte.js",3320],["schnellstart.js",3392],["changelog.js",3471]]};

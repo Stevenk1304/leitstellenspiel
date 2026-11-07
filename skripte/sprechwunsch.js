@@ -196,7 +196,9 @@
         const heading = document.querySelector('#h2_sprechwunsch');
         if (!m || !heading) return;
         const vehicleId = m[1];
-        const list = targets();
+        // Krankenhäuser stehen in Tabellen, Zellen als Knöpfe ("Zelle wählen")
+        let list = targets();
+        if (!list.length) list = prisonButtons(document);
         if (!list.length) return;
         const choice = best(list);
         const kind = list[0].link.href.includes('/patient/') ? 'Krankenhaus' : 'Zelle';
@@ -207,8 +209,9 @@
             noneText: `Kein ${kind === 'Krankenhaus' ? 'Krankenhaus mit passender Fachabteilung und freien Betten' : 'Ziel mit freien Zellen'} gefunden.`,
         });
         (heading.closest('.alert') ?? heading).after(box);
-        choice?.row.classList.add('sw-row-best');
-        interceptClicks(`${TARGET_LINK}, .sw-go`, () => vehicleId, () => box);
+        choice?.row?.classList.add('sw-row-best');
+        if (choice && !choice.row) choice.link.style.outline = '3px solid #2ea043';
+        interceptClicks(`${TARGET_LINK}, a[data-prison-id], .sw-go`, () => vehicleId, () => box);
     }
 
     // "Polizeistation Heringen(Freie Zellen: 2, Entfernung: 0,71 km, Abgabe an Besitzer: 0%)"
@@ -230,6 +233,30 @@
                 tax: Number(m[4] ?? 0),
             });
         }
+        return list;
+    }
+
+    // Zellen-Knöpfe im Fahrzeugfenster; alles hinter der Überschrift "Verbandszellen" gehört dem Verband
+    function prisonButtons(root) {
+        const verband = [...root.querySelectorAll('h1,h2,h3,h4,h5,h6,b,strong,p,div,span,label')]
+            .find(el => !el.children.length && /^\s*Verbandszellen\s*:?\s*$/i.test(el.textContent));
+        const list = [];
+        const seen = new Set();
+        root.querySelectorAll('a[data-prison-id], a[href*="/gefangener/"], a[href*="/prisoner/"]').forEach(el => {
+            if (seen.has(el) || el.closest('.sw-box')) return;
+            seen.add(el);
+            const href = el.getAttribute('href') || '';
+            if (!href || href === '#') return;
+            const m = el.textContent.replace(/\s+/g, ' ').trim().match(PRISON_TEXT);
+            if (!m) return;
+            const own = !verband || !(verband.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING);
+            list.push({
+                link: el, row: null, own, dept: true, name: m[1].trim(),
+                free: Number(m[2]), max: null,
+                dist: parseFloat(m[3].replace(',', '.')),
+                tax: Number(m[4] ?? 0),
+            });
+        });
         return list;
     }
 
