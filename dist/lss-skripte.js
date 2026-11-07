@@ -1983,7 +1983,7 @@ const lss = (() => {
         thw_mzkw: ['MzGW (FGr N)', [41]],
         thw_lkw: ['LKW K 9', [42]],
         thw_brmg_r: ['BRmG R', [43]],
-        thw_dle: ['Anh DLE', [44]],
+        thw_dle: ['Anhänger Drucklufterzeugung (Anh DLE)', [44]],
         heavy_rescue: ['MzGW SB', [109]],
         thw_command: ['FüKW (THW)', [144]],
         thw_command_2: ['FüKomKW', [145]],
@@ -3623,4 +3623,4 @@ const lss = (() => {
 })();
 
 /* exported LSS_BUILD */
-var LSS_BUILD = {"built":"2026-11-07T20:24:29.333Z","files":[["gemeinsam.js",4],["themes.js",482],["fahrzeuge-umbenennen.js",561],["personal-zuweisen.js",661],["personal-verschieben.js",992],["wachen-check.js",1268],["fahrzeug-uebersicht.js",1496],["personal-werben.js",1651],["auslastung.js",1758],["einsatz-helfer.js",1910],["dashboard.js",2612],["kauf-berater.js",2835],["sprechwunsch.js",3027],["fahrzeugnamen-karte.js",3293],["schnellstart.js",3365],["changelog.js",3444]]};
+var LSS_BUILD = {"built":"2026-11-07T20:26:40.974Z","files":[["gemeinsam.js",4],["themes.js",482],["fahrzeuge-umbenennen.js",561],["personal-zuweisen.js",661],["personal-verschieben.js",992],["wachen-check.js",1268],["fahrzeug-uebersicht.js",1496],["personal-werben.js",1651],["auslastung.js",1758],["einsatz-helfer.js",1910],["dashboard.js",2612],["kauf-berater.js",2835],["sprechwunsch.js",3027],["fahrzeugnamen-karte.js",3293],["schnellstart.js",3365],["changelog.js",3444]]};

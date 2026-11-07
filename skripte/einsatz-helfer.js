@@ -74,7 +74,7 @@
         thw_mzkw: ['MzGW (FGr N)', [41]],
         thw_lkw: ['LKW K 9', [42]],
         thw_brmg_r: ['BRmG R', [43]],
-        thw_dle: ['Anh DLE', [44]],
+        thw_dle: ['Anhänger Drucklufterzeugung (Anh DLE)', [44]],
         heavy_rescue: ['MzGW SB', [109]],
         thw_command: ['FüKW (THW)', [144]],
         thw_command_2: ['FüKomKW', [145]],
