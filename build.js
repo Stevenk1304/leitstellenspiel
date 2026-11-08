@@ -8,6 +8,10 @@ const { execFileSync } = require('child_process');
 
 const SRC = path.join(__dirname, 'skripte');
 const OUT = path.join(__dirname, 'dist', 'lss-skripte.js');
+const USER_OUT = path.join(__dirname, 'dist', 'lss-skripte.user.js');
+const META_OUT = path.join(__dirname, 'dist', 'lss-skripte.meta.js');
+// Öffentliche Adresse der Dateien im GitHub-Repo (Branch main)
+const RAW = 'https://raw.githubusercontent.com/Stevenk1304/leitstellenspiel/main';
 
 // Muss als erstes geladen werden (stellt "lss" bereit), Themes direkt danach, damit die Farben sofort stimmen
 const FIRST = ['gemeinsam.js', 'themes.js'];
@@ -43,11 +47,48 @@ const parts = files.map(f => {
     return `// ===== ${f} =====\n${code}\n`;
 });
 // Steht ganz am Ende, damit diese Zeile die Zeilennummern davor nicht verschiebt
-const map = `\n/* exported LSS_BUILD */\nvar LSS_BUILD = ${JSON.stringify({ built: new Date().toISOString(), files: starts })};\n`;
+const built = new Date();
+const map = (offset = 0) => `\n/* exported LSS_BUILD */\nvar LSS_BUILD = ${JSON.stringify({
+    built: built.toISOString(),
+    files: starts.map(([f, start]) => [f, start + offset]),
+})};\n`;
+const body = header + parts.join('\n');
 
 fs.mkdirSync(path.dirname(OUT), { recursive: true });
-fs.writeFileSync(OUT, header + parts.join('\n') + map);
+fs.writeFileSync(OUT, body + map());
+
+// Installierbare Fassung für Tampermonkey aus dem öffentlichen GitHub-Repo. Die Version kommt aus der
+// Bauzeit, damit Tampermonkey jedes neue Build als Update erkennt und von selbst nachlädt.
+const pad = n => String(n).padStart(2, '0');
+const version = `3.${built.getFullYear()}${pad(built.getMonth() + 1)}${pad(built.getDate())}.${pad(built.getHours())}${pad(built.getMinutes())}`;
+const userHeader = [
+    '// ==UserScript==',
+    '// @name         LSS Skripte',
+    '// @namespace    https://github.com/Stevenk1304/leitstellenspiel',
+    `// @version      ${version}`,
+    '// @description  Eigene Werkzeuge für leitstellenspiel.de (Menü 🛠 Werkzeuge in der Spiel-Leiste)',
+    '// @match        https://www.leitstellenspiel.de/*',
+    '// @match        https://leitstellenspiel.de/*',
+    '// @grant        GM_registerMenuCommand',
+    '// @grant        GM_xmlhttpRequest',
+    '// @grant        GM_getValue',
+    '// @grant        GM_setValue',
+    '// @grant        GM_deleteValue',
+    '// @grant        GM_listValues',
+    '// @grant        GM_setClipboard',
+    '// @grant        GM_notification',
+    '// @connect      api.lss-manager.de',
+    '// @run-at       document-idle',
+    `// @updateURL    ${RAW}/dist/lss-skripte.meta.js`,
+    `// @downloadURL  ${RAW}/dist/lss-skripte.user.js`,
+    '// ==/UserScript==',
+    '',
+].join('\n');
+fs.writeFileSync(USER_OUT, userHeader + body + map(userHeader.split('\n').length - 1));
+// Nur der Kopf: Tampermonkey fragt damit kurz nach, ob es eine neue Version gibt
+fs.writeFileSync(META_OUT, userHeader);
 
 // Syntax prüfen, damit ein Tippfehler nicht erst im Spiel auffällt
 execFileSync(process.execPath, ['--check', OUT], { stdio: 'inherit' });
-console.log(`✓ ${files.length} Skripte → ${path.relative(__dirname, OUT)}${extra.length ? ` (neu dabei: ${extra.join(', ')})` : ''}`);
+execFileSync(process.execPath, ['--check', USER_OUT], { stdio: 'inherit' });
+console.log(`✓ ${files.length} Skripte → ${path.relative(__dirname, OUT)} und ${path.relative(__dirname, USER_OUT)} (Version ${version})${extra.length ? ` (neu dabei: ${extra.join(', ')})` : ''}`);

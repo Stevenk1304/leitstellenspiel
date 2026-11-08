@@ -3819,4 +3819,4 @@ const lss = (() => {
 })();
 
 /* exported LSS_BUILD */
-var LSS_BUILD = {"built":"2026-11-08T13:46:36.934Z","files":[["gemeinsam.js",4],["themes.js",482],["fahrzeuge-umbenennen.js",561],["personal-zuweisen.js",661],["personal-verschieben.js",1082],["wachen-check.js",1358],["fahrzeug-uebersicht.js",1586],["personal-werben.js",1741],["auslastung.js",1848],["einsatz-helfer.js",2000],["dashboard.js",2702],["kauf-berater.js",2925],["sprechwunsch.js",3117],["fahrzeugnamen-karte.js",3473],["schnellstart.js",3545],["changelog.js",3624]]};
+var LSS_BUILD = {"built":"2026-11-08T19:58:20.279Z","files":[["gemeinsam.js",4],["themes.js",482],["fahrzeuge-umbenennen.js",561],["personal-zuweisen.js",661],["personal-verschieben.js",1082],["wachen-check.js",1358],["fahrzeug-uebersicht.js",1586],["personal-werben.js",1741],["auslastung.js",1848],["einsatz-helfer.js",2000],["dashboard.js",2702],["kauf-berater.js",2925],["sprechwunsch.js",3117],["fahrzeugnamen-karte.js",3473],["schnellstart.js",3545],["changelog.js",3624]]};
