@@ -10,6 +10,14 @@
     // Neueste zuerst; version muss bei jedem neuen Eintrag größer werden
     const CHANGELOG = [
         {
+            version: 20, date: '08.11.2026', title: 'Personal gleichmäßig verteilen',
+            items: [
+                '⚖️ Personal zuweisen verteilt freie Leute jetzt gleichmäßig auf LF, HLF, MTW usw. einer Wache, statt die ersten Fahrzeuge voll zu machen und die letzten leer zu lassen',
+                '♻️ Personal umsortieren nimmt dafür auch Leute von vollen Fahrzeugen (z.B. HLF mit 9) und gibt sie leeren (z.B. neue LF)',
+                'Fahrzeuge mit Ausbildungspflicht (NEF, ELW 2, Werkfeuerwehr …) werden weiterhin zuerst und ganz gefüllt',
+            ],
+        },
+        {
             version: 19, date: '08.11.2026', title: 'Sprechwunsch-Helfer: Zellen im Fahrzeugfenster',
             items: [
                 '🚔 Auch im Fahrzeugfenster („Zelle wählen“) wird jetzt die beste Zelle markiert und kann mit „Anfahren“ direkt gewählt werden',

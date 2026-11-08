@@ -141,19 +141,88 @@
                 && p.keys.every(k => knownKeys.has(k))
                 && !p.keys.some(k => ownKeys.has(k))
                 && p.keys.some(k => neededAtBuilding.has(k)));
-            let count = 0;
-            for (const p of misplaced) {
-                if (isCancelled()) break;
-                doc().querySelector(`#personal_${p.id} a.btn[personal_id]`)?.click();
-                const ok = await waitFor(() => {
-                    const btn = doc()?.querySelector(`#personal_${p.id} a.btn[personal_id]`);
-                    return btn && !btn.classList.contains('btn-assigned');
-                });
-                if (!ok) throw new Error(`${p.name}: Zuweisung ließ sich nicht entfernen`);
-                count++;
-                await lss.sleep(DELAY);
+            return await unassign(doc, misplaced, isCancelled);
+        } finally {
+            frame.remove();
+        }
+    }
+
+    // Personen von einem Fahrzeug nehmen (Knopf in der Zuweisungsseite klicken)
+    async function unassign(doc, people, isCancelled) {
+        let count = 0;
+        for (const p of people) {
+            if (isCancelled()) break;
+            doc().querySelector(`#personal_${p.id} a.btn[personal_id]`)?.click();
+            const ok = await waitFor(() => {
+                const btn = doc()?.querySelector(`#personal_${p.id} a.btn[personal_id]`);
+                return btn && !btn.classList.contains('btn-assigned');
+            });
+            if (!ok) throw new Error(`${p.name}: Zuweisung ließ sich nicht entfernen`);
+            count++;
+            await lss.sleep(DELAY);
+        }
+        return count;
+    }
+
+    // Darf diese freie Person auf ein Fahrzeug ohne Ausbildungspflicht? (gleiche Regel wie in pick)
+    const fitsPlain = (p, needed, knownKeys) => p.btn && !p.assigned && !p.elsewhere
+        && (!p.keys.length || (p.keys.every(k => knownKeys.has(k)) && !p.keys.some(k => needed.has(k))));
+
+    // Gleichmäßig verteilen: Fahrzeuge ohne Ausbildungspflicht einer Wache (LF, HLF, MTW …) teilen sich das
+    // freie Personal nach Platzzahl, statt dass die ersten Fahrzeuge voll und die letzten leer sind.
+    // canTrim: Fahrzeuge dürfen Leute abgeben (Umsortieren); sonst behalten sie mindestens ihre Besatzung.
+    async function setTargets(group, needed, knownKeys, canTrim) {
+        const frame = await openWorker(group[0].vehicle.id);
+        let free;
+        try {
+            const doc = frame.contentDocument;
+            if (!doc?.querySelector('#personal_table')) throw new Error('Keine Personalliste gefunden');
+            free = readPersonnel(doc).filter(p => fitsPlain(p, needed, knownKeys)).length;
+        } finally {
+            frame.remove();
+        }
+        let pool = free + group.reduce((s, p) => s + p.current, 0);
+        let active = [...group];
+        // Wer mehr behalten muss, als ihm zusteht, bekommt genau das und fällt aus der Verteilung raus
+        for (;;) {
+            const sumMax = active.reduce((s, p) => s + p.max, 0);
+            const fixed = active.filter(p => {
+                const floor = canTrim ? 0 : p.current;
+                return floor >= Math.min(p.max, pool * p.max / sumMax);
+            });
+            if (!fixed.length || !sumMax) break;
+            for (const p of fixed) {
+                p.target = canTrim ? Math.min(p.max, pool * p.max / sumMax) : p.current;
+                p.target = Math.floor(p.target);
+                pool -= p.target;
             }
-            return count;
+            active = active.filter(p => !fixed.includes(p));
+        }
+        const sumMax = active.reduce((s, p) => s + p.max, 0);
+        const share = active.map(p => (sumMax ? Math.min(p.max, pool * p.max / sumMax) : 0));
+        active.forEach((p, i) => { p.target = Math.floor(share[i]); });
+        let rest = Math.max(0, pool) - active.reduce((s, p) => s + p.target, 0);
+        [...active.keys()].sort((a, b) => (share[b] % 1) - (share[a] % 1)).forEach(i => {
+            if (rest > 0 && active[i].target < active[i].max) { active[i].target++; rest--; }
+        });
+    }
+
+    // Ziele für alle Fahrzeuge ohne Ausbildungspflicht dieser Wache setzen (einmal pro Wache)
+    async function ensureTargets(items, p, neededByBuilding, knownKeys, canTrim) {
+        if (p.trained || p.target != null) return;
+        const group = items.filter(o => !o.trained && o.vehicle.building_id === p.vehicle.building_id);
+        await setTargets(group, neededByBuilding[p.vehicle.building_id] ?? new Set(), knownKeys, canTrim);
+    }
+
+    // Überzählige Besatzung abgeben; zuerst Leute ohne Ausbildung, die finden überall Platz
+    async function trimVehicle(vehicle, keep, isCancelled) {
+        const frame = await openWorker(vehicle.id);
+        try {
+            const doc = () => frame.contentDocument;
+            if (!doc()?.querySelector('#personal_table')) throw new Error('Keine Personalliste gefunden');
+            const assigned = readPersonnel(doc()).filter(p => p.assigned)
+                .sort((a, b) => a.keys.length - b.keys.length);
+            return await unassign(doc, assigned.slice(0, Math.max(0, assigned.length - keep)), isCancelled);
         } finally {
             frame.remove();
         }
@@ -218,7 +287,7 @@
             count: `${items.length} Fahrzeug${items.length === 1 ? '' : 'e'}`,
             rows: items.map(p => ({ left: p.vehicle.caption, right: label(p) })),
             empty: 'Alle Fahrzeuge sind schon voll besetzt.',
-            hint: 'Es wird nur freies Personal der jeweiligen Wache zugewiesen. Ausgebildete Leute bleiben für Fahrzeuge frei, die ihre Ausbildung brauchen (auch fürs Zugfahrzeug eines Anhängers).',
+            hint: 'Es wird nur freies Personal der jeweiligen Wache zugewiesen, gleichmäßig verteilt (z.B. LF und HLF bekommen gleich viel). Ausgebildete Leute bleiben für Fahrzeuge frei, die ihre Ausbildung brauchen (auch fürs Zugfahrzeug eines Anhängers).',
             startLabel: 'Personal zuweisen',
             async run(ui) {
                 let added = 0, failed = 0;
@@ -227,11 +296,13 @@
                     ui.busy(i);
                     try {
                         const needed = neededByBuilding[p.vehicle.building_id] ?? new Set();
-                        const n = await fillVehicle(p.vehicle, p.req, p.max, needed, knownKeys, ui.cancelled);
+                        await ensureTargets(items, p, neededByBuilding, knownKeys, false);
+                        const limit = p.trained ? p.max : Math.min(p.max, p.target);
+                        const n = p.current < limit ? await fillVehicle(p.vehicle, p.req, limit, needed, knownKeys, ui.cancelled) : 0;
                         p.current += n;
                         ui.setRight(i, label(p));
                         if (n) ui.done(i, 'ok', `+${n}`);
-                        else ui.done(i, 'skip', '–', 'Kein passendes freies Personal');
+                        else ui.done(i, 'skip', '–', p.current >= limit ? 'Hat schon seinen Anteil' : 'Kein passendes freies Personal');
                         added += n;
                     } catch (e) {
                         ui.done(i, 'err', '!', e.message);
@@ -251,7 +322,7 @@
             count: `${items.length} Fahrzeug${items.length === 1 ? '' : 'e'}`,
             rows: items.map(p => ({ left: p.vehicle.caption, right: label(p) })),
             empty: 'Keine Fahrzeuge mit Besatzung.',
-            hint: 'Schritt 1: Ausgebildete Leute kommen von Fahrzeugen runter, die ihre Ausbildung nicht brauchen, wenn ein anderes Fahrzeug der Wache sie braucht (z.B. Pumpen-Leute vom GKW). Schritt 2: Alle Fahrzeuge werden wieder passend aufgefüllt.',
+            hint: 'Schritt 1: Ausgebildete Leute kommen von Fahrzeugen runter, die ihre Ausbildung nicht brauchen, wenn ein anderes Fahrzeug der Wache sie braucht (z.B. Pumpen-Leute vom GKW). Schritt 2: Volle Fahrzeuge ohne Ausbildungspflicht (z.B. HLF) geben Leute ab, damit alle (z.B. auch die LF) gleich viel bekommen. Schritt 3: Alle Fahrzeuge werden wieder passend aufgefüllt.',
             startLabel: 'Umsortieren',
             async run(ui) {
                 const removed = items.map(() => 0);
@@ -268,15 +339,34 @@
                     } catch (e) {
                         errors[i] = e.message;
                     }
-                    ui.progress((i + 1) / 2, `Schritt 1: ${i + 1} von ${items.length} Fahrzeugen geprüft · ${removed.reduce((a, b) => a + b, 0)} entfernt`);
+                    ui.progress((i + 1) / 3, `Schritt 1: ${i + 1} von ${items.length} Fahrzeugen geprüft · ${removed.reduce((a, b) => a + b, 0)} entfernt`);
+                }
+                // Schritt 2: volle Fahrzeuge ohne Ausbildungspflicht geben Leute ab, damit alle gleich viel haben
+                for (let i = 0; i < items.length && !ui.cancelled(); i++) {
+                    const p = items[i];
+                    if (errors[i] || p.trained) continue;
+                    ui.busy(i);
+                    try {
+                        await ensureTargets(items, p, neededByBuilding, knownKeys, true);
+                        if (p.current > p.target) {
+                            const n = await trimVehicle(p.vehicle, p.target, ui.cancelled);
+                            removed[i] += n;
+                            p.current -= n;
+                            ui.setRight(i, label(p));
+                        }
+                    } catch (e) {
+                        errors[i] = e.message;
+                    }
+                    ui.progress((items.length + i + 1) / 3, `Schritt 2: ${i + 1} von ${items.length} Fahrzeugen gleichmäßig verteilt`);
                 }
                 let added = 0;
                 for (let i = 0; i < items.length && !ui.cancelled(); i++) {
                     const p = items[i];
                     ui.busy(i);
                     let n = 0;
+                    const limit = p.trained ? p.max : Math.min(p.max, p.target ?? p.max);
                     try {
-                        if (!errors[i] && p.current < p.max) n = await fillVehicle(p.vehicle, p.req, p.max, needed(p), knownKeys, ui.cancelled);
+                        if (!errors[i] && p.current < limit) n = await fillVehicle(p.vehicle, p.req, limit, needed(p), knownKeys, ui.cancelled);
                     } catch (e) {
                         errors[i] = e.message;
                     }
@@ -286,8 +376,8 @@
                     const text = [removed[i] ? `−${removed[i]}` : '', n ? `+${n}` : ''].filter(Boolean).join(' ');
                     if (errors[i]) { ui.done(i, 'err', '!', errors[i]); failed++; }
                     else if (text) ui.done(i, 'ok', text);
-                    else ui.done(i, 'skip', '–', p.current >= p.max ? 'Passt schon' : 'Kein passendes freies Personal');
-                    ui.progress((items.length + i + 1) / 2, `Schritt 2: ${i + 1} von ${items.length} Fahrzeugen · ${added} zugewiesen`);
+                    else ui.done(i, 'skip', '–', p.current >= limit ? 'Passt schon' : 'Kein passendes freies Personal');
+                    ui.progress((2 * items.length + i + 1) / 3, `Schritt 3: ${i + 1} von ${items.length} Fahrzeugen · ${added} zugewiesen`);
                 }
                 const total = removed.reduce((a, b) => a + b, 0);
                 return `Fertig! ${total} Person${total === 1 ? '' : 'en'} umgesetzt, ${added} zugewiesen${failed ? `, ${failed} Fehler` : ''}.`;
