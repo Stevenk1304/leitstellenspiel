@@ -3038,6 +3038,8 @@ const lss = (() => {
     // Gerade bearbeitete Fahrzeuge; die API meldet sie noch ein paar Sekunden als Status 5
     const DONE_KEY = 'sprechwunsch.done';
     const DONE_SECONDS = 120;
+    // Kleiner Verlauf der letzten Schritte, damit man sieht, wo die Automatik hängen bleibt
+    const TRAIL_KEY = 'sprechwunsch.trail';
     // 25 % Abgabe an den Verband zählen wie 5 km Umweg
     const KM_PER_PERCENT_TAX = 0.2;
     // Links zum Anfahren: Patienten ins Krankenhaus, Gefangene in eine Zelle
@@ -3144,6 +3146,20 @@ const lss = (() => {
         } catch (e) { return false; }
     };
 
+    const trail = () => { try { return JSON.parse(sessionStorage.getItem(TRAIL_KEY) || '[]'); } catch (e) { return []; } };
+    const addTrail = text => {
+        const time = new Date().toLocaleTimeString('de-DE');
+        try { sessionStorage.setItem(TRAIL_KEY, JSON.stringify([...trail(), `${time} ${text}`].slice(-8))); } catch (e) { /* kein Speicher */ }
+    };
+
+    // Fehlermeldung des Spiels aus der Antwort lesen (z.B. "Keine freien Zellen")
+    function gameError(html) {
+        try {
+            const doc = new DOMParser().parseFromString(html, 'text/html');
+            return doc.querySelector('.alert-danger')?.textContent.replace(/\s+/g, ' ').trim() || '';
+        } catch (e) { return ''; }
+    }
+
     const setStatus = (box, text) => {
         const el = box.querySelector('.sw-status');
         if (el) el.textContent = text;
@@ -3153,13 +3169,20 @@ const lss = (() => {
     // dieses Fenster neu geladen, damit keine veraltete Ziel-Liste mehr zum Anklicken dasteht.
     async function approachAndNext(href, vehicleId, box) {
         setStatus(box, 'Fahre an …');
+        addTrail(`Fahrzeug ${vehicleId}: fahre an`);
         const r = await fetch(href, { credentials: 'include' });
         if (!r.ok) throw new Error(`Anfahren: HTTP ${r.status}`);
+        const error = gameError(await r.text().catch(() => ''));
+        if (error) {
+            addTrail(`Spiel meldet: ${error}`);
+            throw new Error(`Das Spiel meldet: ${error}`);
+        }
         markDone(vehicleId);
         // Im Alarmfenster können mehrere Fahrzeuge Gefangene haben: erst die hier erledigen
         const done = new Set(loadDone().map(d => d.id));
         const moreHere = [...document.querySelectorAll('.prison-select[data-vehicle-id]')].some(s => !done.has(s.dataset.vehicleId));
         if (moreHere) {
+            addTrail('weitere Gefangene in diesem Einsatz');
             location.reload();
             return;
         }
@@ -3167,8 +3190,10 @@ const lss = (() => {
         const next = await nextTalker(vehicleId);
         if (next) {
             setStatus(box, `Weiter zu ${next.caption ?? 'nächstem Fahrzeug'} …`);
+            addTrail(`weiter zu ${next.caption ?? next.id}`);
             goTo(next);
         } else {
+            addTrail('kein weiterer Sprechwunsch');
             box.innerHTML = '<div class="sw-done">✔ Alle Sprechwünsche erledigt!</div>';
             setTimeout(() => location.reload(), 1500);
         }
@@ -3323,9 +3348,35 @@ const lss = (() => {
         );
     }
 
+    // Nach einem automatischen Sprung: Wenn hier nichts zu wählen ist, das sagen und Verlauf zeigen,
+    // statt kommentarlos stehen zu bleiben. Hat das Fahrzeug gar keinen Sprechwunsch mehr, geht es weiter.
+    async function checkLanding() {
+        let jump = null;
+        try { jump = JSON.parse(sessionStorage.getItem(JUMP_KEY) || 'null'); } catch (e) { /* egal */ }
+        if (!jump || Date.now() - jump.t > 60 * 1000 || document.querySelector('.sw-box')) return;
+        const m = location.pathname.match(/^\/vehicles\/(\d+)\/?$/);
+        if (m && m[1] === jump.id && !document.querySelector('#h2_sprechwunsch')) {
+            addTrail(`Fahrzeug ${jump.id} hat keinen Sprechwunsch mehr`);
+            markDone(jump.id);
+            const next = await nextTalker(jump.id);
+            if (next) { addTrail(`weiter zu ${next.caption ?? next.id}`); goTo(next); return; }
+        }
+        try { sessionStorage.removeItem(JUMP_KEY); } catch (e) { /* kein Speicher */ }
+        injectStyle();
+        const note = document.createElement('div');
+        note.className = 'sw-box';
+        note.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:100000;max-width:380px;margin:0';
+        note.innerHTML = `<div class="sw-head"><b>📻 Sprechwunsch-Helfer</b><span class="sw-x" style="cursor:pointer">✕</span></div>
+            <div class="sw-none">Hier gibt es nichts zum Anfahren.</div>
+            <div class="sw-foot" style="display:block;font-size:12px">${trail().map(t => lss.escapeHtml(t)).join('<br>')}</div>`;
+        note.querySelector('.sw-x').onclick = () => note.remove();
+        document.body.append(note);
+    }
+
     if (lss.isWorkerFrame) return;
     lss.safe('Sprechwunsch-Helfer', initVehicle)();
     lss.safe('Sprechwunsch-Helfer (Gefangene)', initMission)();
+    setTimeout(lss.safe('Sprechwunsch-Helfer (Sprung)', checkLanding), 800);
 })();
 
 // ===== fahrzeugnamen-karte.js =====
@@ -3496,6 +3547,7 @@ const lss = (() => {
             items: [
                 '🚔 Auch im Fahrzeugfenster („Zelle wählen“) wird jetzt die beste Zelle markiert und kann mit „Anfahren“ direkt gewählt werden',
                 '⏭ Nach dem Anfahren geht es immer automatisch zum nächsten Sprechwunsch (der Haken ist weg), auch bei Polizeifahrzeugen',
+                '🧾 Bleibt die Automatik irgendwo stehen, erscheint unten rechts ein Hinweis mit den letzten Schritten; Fehlermeldungen des Spiels werden angezeigt',
             ],
         },
         {
@@ -3669,4 +3721,4 @@ const lss = (() => {
 })();
 
 /* exported LSS_BUILD */
-var LSS_BUILD = {"built":"2026-11-07T23:55:44.799Z","files":[["gemeinsam.js",4],["themes.js",482],["fahrzeuge-umbenennen.js",561],["personal-zuweisen.js",661],["personal-verschieben.js",992],["wachen-check.js",1268],["fahrzeug-uebersicht.js",1496],["personal-werben.js",1651],["auslastung.js",1758],["einsatz-helfer.js",1910],["dashboard.js",2612],["kauf-berater.js",2835],["sprechwunsch.js",3027],["fahrzeugnamen-karte.js",3332],["schnellstart.js",3404],["changelog.js",3483]]};
+var LSS_BUILD = {"built":"2026-11-08T00:07:55.506Z","files":[["gemeinsam.js",4],["themes.js",482],["fahrzeuge-umbenennen.js",561],["personal-zuweisen.js",661],["personal-verschieben.js",992],["wachen-check.js",1268],["fahrzeug-uebersicht.js",1496],["personal-werben.js",1651],["auslastung.js",1758],["einsatz-helfer.js",1910],["dashboard.js",2612],["kauf-berater.js",2835],["sprechwunsch.js",3027],["fahrzeugnamen-karte.js",3383],["schnellstart.js",3455],["changelog.js",3534]]};

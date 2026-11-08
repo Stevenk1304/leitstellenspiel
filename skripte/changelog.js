@@ -14,6 +14,7 @@
             items: [
                 '🚔 Auch im Fahrzeugfenster („Zelle wählen“) wird jetzt die beste Zelle markiert und kann mit „Anfahren“ direkt gewählt werden',
                 '⏭ Nach dem Anfahren geht es immer automatisch zum nächsten Sprechwunsch (der Haken ist weg), auch bei Polizeifahrzeugen',
+                '🧾 Bleibt die Automatik irgendwo stehen, erscheint unten rechts ein Hinweis mit den letzten Schritten; Fehlermeldungen des Spiels werden angezeigt',
             ],
         },
         {
