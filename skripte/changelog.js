@@ -15,6 +15,7 @@
                 '🚑 Neues Werkzeug „Patienten-Übersicht“: alle Einsätze, bei denen Patienten noch auf RTW, NEF, LNA usw. warten, Übergabeorte zuerst. Ein Klick öffnet den Einsatz',
                 '⏰ Neue Erinnerung unten links: Fahrzeuge, die länger als 60 Minuten am Einsatz stehen, und Wachen ohne freies Fahrzeug. Mit ✕ ausblendbar, bis sich etwas ändert',
                 '⛰ Einsatz-Helfer: „Bergrettungs-Ausrüstung“ heißt im Spiel „Benötigte GW-Bergrettung“ und wird jetzt richtig gezählt',
+                '👨‍🚒 Einsatz-Helfer liest jetzt auch die rote Meldung „Fehlendes Personal: 3 Feuerwehrleute“. Vorher stand dort manchmal „alles da“, weil die Spieldaten nur einen Durchschnitt kennen',
             ],
         },
         {

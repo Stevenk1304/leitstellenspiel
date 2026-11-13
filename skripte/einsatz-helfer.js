@@ -276,6 +276,27 @@
             .map(m => ({ count: Number(m[1]), text: m[2].trim() }));
     }
 
+    // Rote Meldung "Fehlendes Personal: 3 Feuerwehrleute, 2 Polizisten" → [{ org: 'fire', count: 3 }, ...]
+    // Die Spieldaten kennen nur einen Durchschnitt; was das Spiel hier meldet, ist der echte Bedarf.
+    const PERSONNEL_WORDS = [
+        { re: /Feuerwehr/i, org: 'fire' },
+        { re: /Polizei|Polizist/i, org: 'police' },
+        { re: /THW|Helfer/i, org: 'thw' },
+        { re: /Rettung|Sanitäter|Notfallsanit/i, org: 'ambulance' },
+    ];
+    function gameMissingPersonnelOnPage() {
+        const el = [...document.querySelectorAll('#missing_text, .alert, div, span, p')]
+            .find(x => !x.closest('.eh-box') && /Fehlendes Personal:\s*\d/i.test(x.textContent) && x.textContent.length < 600
+                && ![...x.children].some(c => /Fehlendes Personal:\s*\d/i.test(c.textContent)));
+        if (!el) return [];
+        const part = el.textContent.replace(/\s+/g, ' ').split(/Fehlendes Personal:/i)[1].split(/\.\s+[A-ZÄÖÜ]|\.$|Fehlende /)[0];
+        return part.split(/,\s*|\s+und\s+/)
+            .map(x => x.trim().match(/^(\d+)\s*x?\s+(.+)$/))
+            .filter(Boolean)
+            .map(m => ({ count: Number(m[1]), org: PERSONNEL_WORDS.find(w => w.re.test(m[2]))?.org }))
+            .filter(x => x.org);
+    }
+
     // Was die Patienten-Kärtchen verlangen ("Wir benötigen: LNA"). perPatient: jeder Patient braucht ein
     // eigenes Fahrzeug; sonst reicht eines für alle (z.B. ein LNA für den ganzen Einsatz).
     const PATIENT_NEEDS = [
@@ -534,6 +555,20 @@
                 selected: counts.crewSelected ? crewFor(counts.crewSelected, org, m.inclusions ?? {}) : null,
             });
         }
+        // Rote Meldung "Fehlendes Personal": das Spiel zählt nur, wer VOR ORT ist
+        for (const item of counts.gameMissingPersonnel ?? []) {
+            let row = rows.find(r => r.org === item.org);
+            if (!row) {
+                row = {
+                    label: ORGS[item.org].label, needed: 0, chance: null, org: item.org,
+                    scene: crewFor(counts.crewScene ?? {}, item.org, m.inclusions ?? {}),
+                    driving: crewFor(counts.crewDriving ?? {}, item.org, m.inclusions ?? {}),
+                    selected: counts.crewSelected ? crewFor(counts.crewSelected, item.org, m.inclusions ?? {}) : null,
+                };
+                rows.push(row);
+            }
+            row.needed = Math.max(row.needed, row.scene + item.count);
+        }
         for (const r of rows) r.missing = Math.max(0, r.needed - r.scene - r.driving - (r.selected ?? 0));
         // Fehlende zuerst, Wahrscheinlichkeiten nach hinten
         return rows.sort((a, b) => (b.missing > 0) - (a.missing > 0) || (a.chance != null) - (b.chance != null) || b.needed - a.needed);
@@ -682,6 +717,7 @@
                 patients: patientsOnPage(),
                 patientNeeds: patientNeedsOnPage(),
                 gameMissing: gameMissingOnPage(),
+                gameMissingPersonnel: gameMissingPersonnelOnPage(),
             }, types);
         };
         const update = () => {
@@ -697,6 +733,7 @@
             patientsOnPage(),
             JSON.stringify(patientNeedsOnPage()),
             JSON.stringify(gameMissingOnPage()),
+            JSON.stringify(gameMissingPersonnelOnPage()),
         ].join('|');
         const runPick = auto => {
             picking = true;

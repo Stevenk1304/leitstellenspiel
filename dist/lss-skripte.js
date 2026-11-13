@@ -2334,6 +2334,27 @@ const lss = (() => {
             .map(m => ({ count: Number(m[1]), text: m[2].trim() }));
     }
 
+    // Rote Meldung "Fehlendes Personal: 3 Feuerwehrleute, 2 Polizisten" → [{ org: 'fire', count: 3 }, ...]
+    // Die Spieldaten kennen nur einen Durchschnitt; was das Spiel hier meldet, ist der echte Bedarf.
+    const PERSONNEL_WORDS = [
+        { re: /Feuerwehr/i, org: 'fire' },
+        { re: /Polizei|Polizist/i, org: 'police' },
+        { re: /THW|Helfer/i, org: 'thw' },
+        { re: /Rettung|Sanitäter|Notfallsanit/i, org: 'ambulance' },
+    ];
+    function gameMissingPersonnelOnPage() {
+        const el = [...document.querySelectorAll('#missing_text, .alert, div, span, p')]
+            .find(x => !x.closest('.eh-box') && /Fehlendes Personal:\s*\d/i.test(x.textContent) && x.textContent.length < 600
+                && ![...x.children].some(c => /Fehlendes Personal:\s*\d/i.test(c.textContent)));
+        if (!el) return [];
+        const part = el.textContent.replace(/\s+/g, ' ').split(/Fehlendes Personal:/i)[1].split(/\.\s+[A-ZÄÖÜ]|\.$|Fehlende /)[0];
+        return part.split(/,\s*|\s+und\s+/)
+            .map(x => x.trim().match(/^(\d+)\s*x?\s+(.+)$/))
+            .filter(Boolean)
+            .map(m => ({ count: Number(m[1]), org: PERSONNEL_WORDS.find(w => w.re.test(m[2]))?.org }))
+            .filter(x => x.org);
+    }
+
     // Was die Patienten-Kärtchen verlangen ("Wir benötigen: LNA"). perPatient: jeder Patient braucht ein
     // eigenes Fahrzeug; sonst reicht eines für alle (z.B. ein LNA für den ganzen Einsatz).
     const PATIENT_NEEDS = [
@@ -2592,6 +2613,20 @@ const lss = (() => {
                 selected: counts.crewSelected ? crewFor(counts.crewSelected, org, m.inclusions ?? {}) : null,
             });
         }
+        // Rote Meldung "Fehlendes Personal": das Spiel zählt nur, wer VOR ORT ist
+        for (const item of counts.gameMissingPersonnel ?? []) {
+            let row = rows.find(r => r.org === item.org);
+            if (!row) {
+                row = {
+                    label: ORGS[item.org].label, needed: 0, chance: null, org: item.org,
+                    scene: crewFor(counts.crewScene ?? {}, item.org, m.inclusions ?? {}),
+                    driving: crewFor(counts.crewDriving ?? {}, item.org, m.inclusions ?? {}),
+                    selected: counts.crewSelected ? crewFor(counts.crewSelected, item.org, m.inclusions ?? {}) : null,
+                };
+                rows.push(row);
+            }
+            row.needed = Math.max(row.needed, row.scene + item.count);
+        }
         for (const r of rows) r.missing = Math.max(0, r.needed - r.scene - r.driving - (r.selected ?? 0));
         // Fehlende zuerst, Wahrscheinlichkeiten nach hinten
         return rows.sort((a, b) => (b.missing > 0) - (a.missing > 0) || (a.chance != null) - (b.chance != null) || b.needed - a.needed);
@@ -2740,6 +2775,7 @@ const lss = (() => {
                 patients: patientsOnPage(),
                 patientNeeds: patientNeedsOnPage(),
                 gameMissing: gameMissingOnPage(),
+                gameMissingPersonnel: gameMissingPersonnelOnPage(),
             }, types);
         };
         const update = () => {
@@ -2755,6 +2791,7 @@ const lss = (() => {
             patientsOnPage(),
             JSON.stringify(patientNeedsOnPage()),
             JSON.stringify(gameMissingOnPage()),
+            JSON.stringify(gameMissingPersonnelOnPage()),
         ].join('|');
         const runPick = auto => {
             picking = true;
@@ -4108,6 +4145,7 @@ const lss = (() => {
                 '🚑 Neues Werkzeug „Patienten-Übersicht“: alle Einsätze, bei denen Patienten noch auf RTW, NEF, LNA usw. warten, Übergabeorte zuerst. Ein Klick öffnet den Einsatz',
                 '⏰ Neue Erinnerung unten links: Fahrzeuge, die länger als 60 Minuten am Einsatz stehen, und Wachen ohne freies Fahrzeug. Mit ✕ ausblendbar, bis sich etwas ändert',
                 '⛰ Einsatz-Helfer: „Bergrettungs-Ausrüstung“ heißt im Spiel „Benötigte GW-Bergrettung“ und wird jetzt richtig gezählt',
+                '👨‍🚒 Einsatz-Helfer liest jetzt auch die rote Meldung „Fehlendes Personal: 3 Feuerwehrleute“. Vorher stand dort manchmal „alles da“, weil die Spieldaten nur einen Durchschnitt kennen',
             ],
         },
         {
@@ -4321,4 +4359,4 @@ const lss = (() => {
 })();
 
 /* exported LSS_BUILD */
-var LSS_BUILD = {"built":"2026-11-13T22:33:44.282Z","files":[["gemeinsam.js",4],["themes.js",482],["fahrzeuge-umbenennen.js",561],["personal-zuweisen.js",661],["personal-verschieben.js",1141],["wachen-check.js",1417],["fahrzeug-uebersicht.js",1645],["personal-werben.js",1800],["auslastung.js",1907],["einsatz-helfer.js",2059],["dashboard.js",2863],["kauf-berater.js",3086],["sprechwunsch.js",3278],["fahrzeuge-zurueck.js",3634],["fahrzeugnamen-karte.js",3801],["patienten.js",3873],["schnellstart.js",4015],["changelog.js",4094]]};
+var LSS_BUILD = {"built":"2026-11-13T22:35:15.888Z","files":[["gemeinsam.js",4],["themes.js",482],["fahrzeuge-umbenennen.js",561],["personal-zuweisen.js",661],["personal-verschieben.js",1141],["wachen-check.js",1417],["fahrzeug-uebersicht.js",1645],["personal-werben.js",1800],["auslastung.js",1907],["einsatz-helfer.js",2059],["dashboard.js",2900],["kauf-berater.js",3123],["sprechwunsch.js",3315],["fahrzeuge-zurueck.js",3671],["fahrzeugnamen-karte.js",3838],["patienten.js",3910],["schnellstart.js",4052],["changelog.js",4131]]};
