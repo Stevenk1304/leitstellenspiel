@@ -10,6 +10,13 @@
     // Neueste zuerst; version muss bei jedem neuen Eintrag größer werden
     const CHANGELOG = [
         {
+            version: 26, date: '13.11.2026', title: 'Fahrzeug-Suche',
+            items: [
+                '🔎 Neues Werkzeug „Fahrzeug-Suche“: z.B. „FwK“ oder „Feuerwehrkran“ eintippen und sehen, an welcher Wache er steht, welchen Status er hat und in welchem Einsatz er gerade ist',
+                'Mehrere Wörter grenzen ein (z.B. „RTW Bielen“), Haken „nur im Einsatz“ zeigt nur Fahrzeuge, die gerade unterwegs sind. Ein Klick öffnet Fahrzeug, Wache oder Einsatz',
+            ],
+        },
+        {
             version: 25, date: '13.11.2026', title: 'Links öffnen wieder im Spielfenster',
             items: [
                 '🐛 Ein Klick auf einen Einsatz, ein Fahrzeug oder eine Wache in Patienten-Übersicht, Fahrzeuge zurück, Auslastung, Wachen-Check und Dashboard öffnet wieder das normale Spielfenster, statt die ganze Seite zu wechseln',
