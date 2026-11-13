@@ -210,7 +210,7 @@
             else if (assign) lss.actions.assign(Number(assign.dataset.assign));
             else if (rename) lss.actions.rename(Number(rename.dataset.rename));
             // Wache öffnen: Check schließen, damit das Fenster des Spiels sichtbar ist
-            else if (e.target.closest('.wc-name')) panel.close();
+            else if (e.target.closest('.wc-name')) setTimeout(panel.close, 0);
         });
     }
 

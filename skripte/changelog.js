@@ -10,6 +10,12 @@
     // Neueste zuerst; version muss bei jedem neuen Eintrag größer werden
     const CHANGELOG = [
         {
+            version: 25, date: '13.11.2026', title: 'Links öffnen wieder im Spielfenster',
+            items: [
+                '🐛 Ein Klick auf einen Einsatz, ein Fahrzeug oder eine Wache in Patienten-Übersicht, Fahrzeuge zurück, Auslastung, Wachen-Check und Dashboard öffnet wieder das normale Spielfenster, statt die ganze Seite zu wechseln',
+            ],
+        },
+        {
             version: 24, date: '13.11.2026', title: 'Patienten-Übersicht und Fahrzeuge zurück',
             items: [
                 '🚑 Neues Werkzeug „Patienten-Übersicht“: alle Einsätze, bei denen Patienten noch auf RTW, NEF, LNA usw. warten, Übergabeorte zuerst. Ein Klick öffnet den Einsatz',

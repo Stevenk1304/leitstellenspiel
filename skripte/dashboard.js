@@ -205,7 +205,7 @@
 
         body.addEventListener('click', e => {
             if (e.target.closest('.db-refresh')) return refresh();
-            if (e.target.closest('.db-list a')) return panel.close();
+            if (e.target.closest('.db-list a')) return void setTimeout(panel.close, 0);
             const el = e.target.closest('[data-action]');
             const run = el && actionFor(el.dataset.action);
             if (run) run();

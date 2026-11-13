@@ -107,7 +107,7 @@
             <div class="fz-foot">Die Zeit am Einsatz wird nur gemessen, solange das Spiel offen ist, ist also eher zu kurz als zu lang.
                 Zurückrufen musst du im Spiel selbst.</div>`,
         });
-        panel.root.addEventListener('click', ev => { if (ev.target.closest('a.lightbox-open')) panel.close(); });
+        panel.root.addEventListener('click', ev => { if (ev.target.closest('a.lightbox-open')) setTimeout(panel.close, 0); });
     }
 
     let badge = null;

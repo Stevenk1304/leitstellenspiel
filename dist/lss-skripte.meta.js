@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LSS Skripte
 // @namespace    https://github.com/Stevenk1304/leitstellenspiel
-// @version      3.20261113.2335
+// @version      3.20261113.2338
 // @description  Eigene Werkzeuge für leitstellenspiel.de (Menü 🛠 Werkzeuge in der Spiel-Leiste)
 // @match        https://www.leitstellenspiel.de/*
 // @match        https://leitstellenspiel.de/*

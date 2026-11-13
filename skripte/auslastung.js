@@ -139,7 +139,7 @@
             ${hospitals.length ? `<div class="al-section">Krankenhäuser</div>${hospitals.sort(byLoad).map(rowHtml).join('')}` : ''}
             ${cells.length ? `<div class="al-section">Zellen</div>${cells.sort(byLoad).map(rowHtml).join('')}` : ''}
             ${total ? '' : '<div class="al-loading">Keine Krankenhäuser oder Zellen gefunden.</div>'}`;
-        list.addEventListener('click', e => { if (e.target.closest('.al-name')) panel.close(); });
+        list.addEventListener('click', e => { if (e.target.closest('.al-name')) setTimeout(panel.close, 0); });
     }
 
     lss.actions.occupancy = start;

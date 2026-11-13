@@ -1626,7 +1626,7 @@ const lss = (() => {
             else if (assign) lss.actions.assign(Number(assign.dataset.assign));
             else if (rename) lss.actions.rename(Number(rename.dataset.rename));
             // Wache öffnen: Check schließen, damit das Fenster des Spiels sichtbar ist
-            else if (e.target.closest('.wc-name')) panel.close();
+            else if (e.target.closest('.wc-name')) setTimeout(panel.close, 0);
         });
     }
 
@@ -2045,7 +2045,7 @@ const lss = (() => {
             ${hospitals.length ? `<div class="al-section">Krankenhäuser</div>${hospitals.sort(byLoad).map(rowHtml).join('')}` : ''}
             ${cells.length ? `<div class="al-section">Zellen</div>${cells.sort(byLoad).map(rowHtml).join('')}` : ''}
             ${total ? '' : '<div class="al-loading">Keine Krankenhäuser oder Zellen gefunden.</div>'}`;
-        list.addEventListener('click', e => { if (e.target.closest('.al-name')) panel.close(); });
+        list.addEventListener('click', e => { if (e.target.closest('.al-name')) setTimeout(panel.close, 0); });
     }
 
     lss.actions.occupancy = start;
@@ -3104,7 +3104,7 @@ const lss = (() => {
 
         body.addEventListener('click', e => {
             if (e.target.closest('.db-refresh')) return refresh();
-            if (e.target.closest('.db-list a')) return panel.close();
+            if (e.target.closest('.db-list a')) return void setTimeout(panel.close, 0);
             const el = e.target.closest('[data-action]');
             const run = el && actionFor(el.dataset.action);
             if (run) run();
@@ -3777,7 +3777,7 @@ const lss = (() => {
             <div class="fz-foot">Die Zeit am Einsatz wird nur gemessen, solange das Spiel offen ist, ist also eher zu kurz als zu lang.
                 Zurückrufen musst du im Spiel selbst.</div>`,
         });
-        panel.root.addEventListener('click', ev => { if (ev.target.closest('a.lightbox-open')) panel.close(); });
+        panel.root.addEventListener('click', ev => { if (ev.target.closest('a.lightbox-open')) setTimeout(panel.close, 0); });
     }
 
     let badge = null;
@@ -4038,7 +4038,8 @@ const lss = (() => {
             if (!document.body.contains(list)) return clearInterval(timer);
             draw();
         }, 3000);
-        list.addEventListener('click', e => { if (e.target.closest('.pt-name')) panel.close(); });
+        // Erst nach dem Klick schließen: das Spiel öffnet das Alarmfenster nur, solange der Link noch auf der Seite ist
+        list.addEventListener('click', e => { if (e.target.closest('.pt-name')) setTimeout(panel.close, 0); });
     }
 
     lss.actions.patients = start;
@@ -4139,6 +4140,12 @@ const lss = (() => {
 
     // Neueste zuerst; version muss bei jedem neuen Eintrag größer werden
     const CHANGELOG = [
+        {
+            version: 25, date: '13.11.2026', title: 'Links öffnen wieder im Spielfenster',
+            items: [
+                '🐛 Ein Klick auf einen Einsatz, ein Fahrzeug oder eine Wache in Patienten-Übersicht, Fahrzeuge zurück, Auslastung, Wachen-Check und Dashboard öffnet wieder das normale Spielfenster, statt die ganze Seite zu wechseln',
+            ],
+        },
         {
             version: 24, date: '13.11.2026', title: 'Patienten-Übersicht und Fahrzeuge zurück',
             items: [
@@ -4359,4 +4366,4 @@ const lss = (() => {
 })();
 
 /* exported LSS_BUILD */
-var LSS_BUILD = {"built":"2026-11-13T22:35:15.888Z","files":[["gemeinsam.js",4],["themes.js",482],["fahrzeuge-umbenennen.js",561],["personal-zuweisen.js",661],["personal-verschieben.js",1141],["wachen-check.js",1417],["fahrzeug-uebersicht.js",1645],["personal-werben.js",1800],["auslastung.js",1907],["einsatz-helfer.js",2059],["dashboard.js",2900],["kauf-berater.js",3123],["sprechwunsch.js",3315],["fahrzeuge-zurueck.js",3671],["fahrzeugnamen-karte.js",3838],["patienten.js",3910],["schnellstart.js",4052],["changelog.js",4131]]};
+var LSS_BUILD = {"built":"2026-11-13T22:38:01.711Z","files":[["gemeinsam.js",4],["themes.js",482],["fahrzeuge-umbenennen.js",561],["personal-zuweisen.js",661],["personal-verschieben.js",1141],["wachen-check.js",1417],["fahrzeug-uebersicht.js",1645],["personal-werben.js",1800],["auslastung.js",1907],["einsatz-helfer.js",2059],["dashboard.js",2900],["kauf-berater.js",3123],["sprechwunsch.js",3315],["fahrzeuge-zurueck.js",3671],["fahrzeugnamen-karte.js",3838],["patienten.js",3910],["schnellstart.js",4053],["changelog.js",4132]]};

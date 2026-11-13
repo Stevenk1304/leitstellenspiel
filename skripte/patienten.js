@@ -129,7 +129,8 @@
             if (!document.body.contains(list)) return clearInterval(timer);
             draw();
         }, 3000);
-        list.addEventListener('click', e => { if (e.target.closest('.pt-name')) panel.close(); });
+        // Erst nach dem Klick schließen: das Spiel öffnet das Alarmfenster nur, solange der Link noch auf der Seite ist
+        list.addEventListener('click', e => { if (e.target.closest('.pt-name')) setTimeout(panel.close, 0); });
     }
 
     lss.actions.patients = start;
