@@ -10,6 +10,12 @@
     // Neueste zuerst; version muss bei jedem neuen Eintrag größer werden
     const CHANGELOG = [
         {
+            version: 22, date: '13.11.2026', title: 'Einsatz-Helfer: Bergeinsätze',
+            items: [
+                '🐛 Fahrzeuge mit Ausrüstung (z.B. GW-Bergrettung mit Drohnen) galten im Einsatz-Helfer als ausgewählt, obwohl sie nicht angehakt waren. Die Häkchen der Ladung werden jetzt nicht mehr als Fahrzeug gezählt',
+            ],
+        },
+        {
             version: 21, date: '13.11.2026', title: 'Überzählige Fachleute verteilen',
             items: [
                 '➕ Neuer Knopf auf der Wachen-Seite und im Werkzeuge-Menü: setzt ausgebildete Leute, von denen die Wache mehr hat als gebraucht (z.B. 6 Notärzte für 1 NEF), auch auf freie Plätze anderer Fahrzeuge',

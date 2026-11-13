@@ -317,6 +317,9 @@
             const row = input.closest('tr');
             const table = row?.closest('table');
             if (!input.classList.contains('vehicle_checkbox') && !table?.id.startsWith('vehicle_show_table')) return;
+            // Häkchen für Ausrüstung (z.B. Drohnen beim GW-Bergrettung) stehen in derselben Zeile,
+            // sind aber kein Fahrzeug. Die Standard-Ausrüstung ist schon vorab angehakt.
+            if (input.classList.contains('equipment-checkbox') || input.closest('.dispatch-vehicle-equipments')) return;
             const id = [input.value, input.getAttribute('vehicle_id'), row?.id?.match(/\d+/)?.[0]].find(v => /^\d+$/.test(v ?? ''));
             const typeAttr = input.getAttribute('vehicle_type_id') ?? row?.querySelector('[vehicle_type_id]')?.getAttribute('vehicle_type_id');
             const type = typeAttr != null ? Number(typeAttr) : ownVehicles?.[id]?.vehicle_type;

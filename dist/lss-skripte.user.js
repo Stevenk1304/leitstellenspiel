@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LSS Skripte
 // @namespace    https://github.com/Stevenk1304/leitstellenspiel
-// @version      3.20261113.2000
+// @version      3.20261113.2249
 // @description  Eigene Werkzeuge für leitstellenspiel.de (Menü 🛠 Werkzeuge in der Spiel-Leiste)
 // @match        https://www.leitstellenspiel.de/*
 // @match        https://leitstellenspiel.de/*
@@ -2395,6 +2395,9 @@ const lss = (() => {
             const row = input.closest('tr');
             const table = row?.closest('table');
             if (!input.classList.contains('vehicle_checkbox') && !table?.id.startsWith('vehicle_show_table')) return;
+            // Häkchen für Ausrüstung (z.B. Drohnen beim GW-Bergrettung) stehen in derselben Zeile,
+            // sind aber kein Fahrzeug. Die Standard-Ausrüstung ist schon vorab angehakt.
+            if (input.classList.contains('equipment-checkbox') || input.closest('.dispatch-vehicle-equipments')) return;
             const id = [input.value, input.getAttribute('vehicle_id'), row?.id?.match(/\d+/)?.[0]].find(v => /^\d+$/.test(v ?? ''));
             const typeAttr = input.getAttribute('vehicle_type_id') ?? row?.querySelector('[vehicle_type_id]')?.getAttribute('vehicle_type_id');
             const type = typeAttr != null ? Number(typeAttr) : ownVehicles?.[id]?.vehicle_type;
@@ -3712,6 +3715,12 @@ const lss = (() => {
     // Neueste zuerst; version muss bei jedem neuen Eintrag größer werden
     const CHANGELOG = [
         {
+            version: 22, date: '13.11.2026', title: 'Einsatz-Helfer: Bergeinsätze',
+            items: [
+                '🐛 Fahrzeuge mit Ausrüstung (z.B. GW-Bergrettung mit Drohnen) galten im Einsatz-Helfer als ausgewählt, obwohl sie nicht angehakt waren. Die Häkchen der Ladung werden jetzt nicht mehr als Fahrzeug gezählt',
+            ],
+        },
+        {
             version: 21, date: '13.11.2026', title: 'Überzählige Fachleute verteilen',
             items: [
                 '➕ Neuer Knopf auf der Wachen-Seite und im Werkzeuge-Menü: setzt ausgebildete Leute, von denen die Wache mehr hat als gebraucht (z.B. 6 Notärzte für 1 NEF), auch auf freie Plätze anderer Fahrzeuge',
@@ -3905,4 +3914,4 @@ const lss = (() => {
 })();
 
 /* exported LSS_BUILD */
-var LSS_BUILD = {"built":"2026-11-13T19:00:13.421Z","files":[["gemeinsam.js",24],["themes.js",502],["fahrzeuge-umbenennen.js",581],["personal-zuweisen.js",681],["personal-verschieben.js",1161],["wachen-check.js",1437],["fahrzeug-uebersicht.js",1665],["personal-werben.js",1820],["auslastung.js",1927],["einsatz-helfer.js",2079],["dashboard.js",2781],["kauf-berater.js",3004],["sprechwunsch.js",3196],["fahrzeugnamen-karte.js",3552],["schnellstart.js",3624],["changelog.js",3703]]};
+var LSS_BUILD = {"built":"2026-11-13T21:49:36.901Z","files":[["gemeinsam.js",24],["themes.js",502],["fahrzeuge-umbenennen.js",581],["personal-zuweisen.js",681],["personal-verschieben.js",1161],["wachen-check.js",1437],["fahrzeug-uebersicht.js",1665],["personal-werben.js",1820],["auslastung.js",1927],["einsatz-helfer.js",2079],["dashboard.js",2784],["kauf-berater.js",3007],["sprechwunsch.js",3199],["fahrzeugnamen-karte.js",3555],["schnellstart.js",3627],["changelog.js",3706]]};
