@@ -1,5 +1,5 @@
 // AUTOMATISCH ERZEUGT von build.js – nicht von Hand bearbeiten, Änderungen gehören nach skripte/.
-// Enthält: gemeinsam.js, themes.js, fahrzeuge-umbenennen.js, personal-zuweisen.js, personal-verschieben.js, wachen-check.js, fahrzeug-uebersicht.js, personal-werben.js, auslastung.js, einsatz-helfer.js, dashboard.js, kauf-berater.js, sprechwunsch.js, fahrzeugnamen-karte.js, schnellstart.js, changelog.js
+// Enthält: gemeinsam.js, themes.js, fahrzeuge-umbenennen.js, personal-zuweisen.js, personal-verschieben.js, wachen-check.js, fahrzeug-uebersicht.js, personal-werben.js, auslastung.js, einsatz-helfer.js, dashboard.js, kauf-berater.js, sprechwunsch.js, fahrzeuge-zurueck.js, fahrzeugnamen-karte.js, patienten.js, schnellstart.js, changelog.js
 // ===== gemeinsam.js =====
 // Gemeinsame Hilfsfunktionen und das Fenster-Design für alle LSS-Skripte.
 // Muss im Lade-Skript als erstes @require stehen.
@@ -2165,14 +2165,14 @@ const lss = (() => {
         mountain_command: ['ELW Bergrettung', [151]],
         mountain_snow: ['Schneefahrzeuge', [154]],
         mountain_atv: ['ATV', [152]],
-        mountain_equipment: ['Bergrettungs-Ausrüstung', []],
+        mountain_equipment: ['GW-Bergrettung (zusätzlich)', [150, 149]], // im Spiel: "Benötigte GW-Bergrettung"
         coastal_helicopter: ['Hubschrauber (Seenot)', [161]],
         coastal_boat_large: ['Seenotrettungskreuzer', [159]],
         oneof_coastal_rescue_boat_or_boat_large: ['Seenotrettungsboot/-kreuzer', [159, 160]],
         animal_rescue: ['Tierrettung', [185, 186]],
         pump: ['Pumpen', []],
         min_pump_speed: ['Mindest-Pumpleistung (l/min)', []],
-        lift: ['Hubrettung (Winde)', [156, 157, 'eq:winch']],
+        lift: ['Hubschrauber mit Winde', [156, 157, 'eq:winch']],
         patient_transport: ['Krankentransport', []],
         patient_other_treatment: ['Sonstige Behandlung', []],
     };
@@ -3630,6 +3630,173 @@ const lss = (() => {
     setTimeout(lss.safe('Sprechwunsch-Helfer (Sprung)', checkLanding), 800);
 })();
 
+// ===== fahrzeuge-zurueck.js =====
+// LSS "Fahrzeuge zurück"-Erinnerung
+// Schaut alle paar Minuten nach (nur auf der Hauptseite) und zeigt unten links einen kleinen Hinweis, wenn
+//  - Fahrzeuge schon lange am Einsatz stehen (Status 4), oder
+//  - eine Wache gerade kein einziges einsatzbereites Fahrzeug mehr hat.
+// Es wird nichts zurückgerufen oder alarmiert, der Hinweis verlinkt nur auf Fahrzeug, Einsatz und Wache.
+// Wird über tampermonkey-loader.user.js geladen, braucht gemeinsam.js.
+
+(function () {
+    'use strict';
+
+    const SINCE_KEY = 'fahrzeugeZurueck.since';   // { Fahrzeug-ID: Zeitpunkt, seit dem es in Status 4 ist }
+    const HIDDEN_KEY = 'fahrzeugeZurueck.hidden'; // Fingerabdruck der ausgeblendeten Hinweise
+    const CHECK_MINUTES = 2;
+    const LONG_MINUTES = 60;                      // ab so lange am Einsatz gilt ein Fahrzeug als "lange"
+    const READY = [1, 2];                         // einsatzbereit: frei auf Funk, auf Wache
+
+    const STYLE = `
+        .fz-badge { position:fixed; left:12px; bottom:12px; z-index:9998; display:flex; align-items:center; gap:8px; background:#3a3220; color:#ffe7a8;
+            border:1px solid #7a5a1f; border-radius:8px; padding:6px 10px; font-size:13px; font-weight:600; box-shadow:0 4px 14px rgba(0,0,0,.4); cursor:pointer; }
+        .fz-badge:hover { background:#4a4028; }
+        .fz-badge .fz-x { color:#c9b07a; font-weight:400; padding:0 2px; }
+        .fz-list { overflow:auto; flex:1; padding:6px 0 12px; }
+        .fz-section { color:#8b929c; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; padding:12px 18px 6px; }
+        .fz-row { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) 110px; align-items:center; gap:12px; padding:7px 18px; font-size:13px; border-bottom:1px solid #2e3238; }
+        .fz-row:hover { background:#2a2e34; }
+        .fz-row a { color:#fff !important; font-weight:600; text-decoration:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .fz-row a:hover { text-decoration:underline; }
+        .fz-muted { color:#8b929c; }
+        .fz-time { text-align:right; color:#ffcf70; font-variant-numeric:tabular-nums; }
+        .fz-empty { padding:30px; text-align:center; color:#8b929c; }
+        .fz-foot { padding:8px 18px; color:#8b929c; font-size:11px; border-top:1px solid #3a3f47; }
+    `;
+
+    function injectStyle() {
+        if (document.getElementById('fz-style')) return;
+        const style = document.createElement('style');
+        style.id = 'fz-style';
+        style.textContent = STYLE;
+        document.head.append(style);
+    }
+
+    const load = (key, fallback) => { try { return GM_getValue(key, fallback); } catch (e) { return fallback; } };
+    const save = (key, value) => { try { GM_setValue(key, value); } catch (e) { /* kein Speicher */ } };
+    const minutes = ms => Math.floor(ms / 60000);
+    const duration = ms => {
+        const m = minutes(ms);
+        return m >= 60 ? `${Math.floor(m / 60)} Std. ${m % 60} Min.` : `${m} Min.`;
+    };
+
+    // Lädt Fahrzeuge und Wachen, merkt sich, seit wann Fahrzeuge in Status 4 sind, und liefert die Hinweise
+    async function check() {
+        const [vehicles, buildings] = await Promise.all([lss.getJSON('/api/vehicles'), lss.getJSON('/api/buildings')]);
+        const now = Date.now();
+        const old = load(SINCE_KEY, {});
+        const since = {};
+        for (const v of vehicles) if (v.fms_real === 4) since[v.id] = old[v.id] ?? now;
+        save(SINCE_KEY, since);
+
+        const names = Object.fromEntries(buildings.map(b => [b.id, b.caption]));
+        const long = vehicles
+            .filter(v => v.fms_real === 4 && now - since[v.id] >= LONG_MINUTES * 60000)
+            .map(v => ({ v, ms: now - since[v.id] }))
+            .sort((a, b) => b.ms - a.ms);
+
+        const byBuilding = new Map();
+        for (const v of vehicles) {
+            if (!byBuilding.has(v.building_id)) byBuilding.set(v.building_id, []);
+            byBuilding.get(v.building_id).push(v);
+        }
+        const empty = [...byBuilding.entries()]
+            .filter(([, list]) => list.length > 0 && !list.some(v => READY.includes(v.fms_real)))
+            .map(([id, list]) => ({ id, name: names[id] ?? `Wache ${id}`, count: list.length,
+                out: list.filter(v => v.fms_real === 6).length }))
+            .filter(b => b.out < b.count) // nur außer Dienst (Status 6) ist kein Einsatzgeschehen
+            .sort((a, b) => a.name.localeCompare(b.name));
+
+        return { long, empty, names, firstRun: Object.keys(old).length === 0 };
+    }
+
+    const fingerprint = r => [...r.long.map(x => `v${x.v.id}`), ...r.empty.map(b => `b${b.id}`)].sort().join(',');
+
+    function showPanel(result) {
+        injectStyle();
+        const e = lss.escapeHtml;
+        const { long, empty, names } = result;
+        const panel = lss.openPanel({
+            title: 'Fahrzeuge zurück?',
+            count: `${long.length} lange am Einsatz · ${empty.length} Wachen leer`,
+            body: `<div class="fz-list">
+                <div class="fz-section">Länger als ${LONG_MINUTES} Min. am Einsatz (${long.length})</div>
+                ${long.length ? long.map(({ v, ms }) => `
+                    <div class="fz-row">
+                        <a class="lightbox-open" href="/vehicles/${v.id}">${e(v.caption)}</a>
+                        ${v.target_type === 'mission' && v.target_id
+                            ? `<a class="lightbox-open" href="/missions/${v.target_id}">➜ zum Einsatz</a>`
+                            : `<span class="fz-muted">${e(names[v.building_id] ?? '')}</span>`}
+                        <span class="fz-time">seit ${duration(ms)}</span>
+                    </div>`).join('') : '<div class="fz-empty">✔ Kein Fahrzeug steht auffällig lange am Einsatz.</div>'}
+                <div class="fz-section">Wachen ohne einsatzbereites Fahrzeug (${empty.length})</div>
+                ${empty.length ? empty.map(b => `
+                    <div class="fz-row">
+                        <a class="lightbox-open" href="/buildings/${b.id}">${e(b.name)}</a>
+                        <span class="fz-muted">${b.count === 1 ? 'das einzige Fahrzeug ist' : `alle ${b.count} Fahrzeuge sind`} unterwegs${b.out ? `, davon ${b.out} außer Dienst` : ''}</span>
+                        <span></span>
+                    </div>`).join('') : '<div class="fz-empty">✔ Jede Wache hat noch ein Fahrzeug frei.</div>'}
+            </div>
+            <div class="fz-foot">Die Zeit am Einsatz wird nur gemessen, solange das Spiel offen ist, ist also eher zu kurz als zu lang.
+                Zurückrufen musst du im Spiel selbst.</div>`,
+        });
+        panel.root.addEventListener('click', ev => { if (ev.target.closest('a.lightbox-open')) panel.close(); });
+    }
+
+    let badge = null;
+    function showBadge(result) {
+        const total = result.long.length + result.empty.length;
+        const fp = fingerprint(result);
+        if (!total || load(HIDDEN_KEY, '') === fp) {
+            badge?.remove();
+            badge = null;
+            return;
+        }
+        injectStyle();
+        if (!badge) {
+            badge = document.createElement('div');
+            badge.className = 'fz-badge';
+            document.body.append(badge);
+        }
+        const parts = [
+            result.long.length ? `${result.long.length} lange am Einsatz` : '',
+            result.empty.length ? `${result.empty.length} Wache${result.empty.length === 1 ? '' : 'n'} leer` : '',
+        ].filter(Boolean);
+        badge.innerHTML = `⏰ <span>${parts.join(' · ')}</span><span class="fz-x" title="Ausblenden, bis sich etwas ändert">✕</span>`;
+        badge.onclick = ev => {
+            if (ev.target.closest('.fz-x')) {
+                save(HIDDEN_KEY, fp);
+                badge.remove();
+                badge = null;
+                return;
+            }
+            showPanel(result);
+        };
+    }
+
+    async function tick() {
+        const result = await check();
+        showBadge(result);
+        return result;
+    }
+
+    async function start() {
+        showPanel(await check());
+    }
+
+    lss.actions.vehiclesBack = start;
+
+    if (lss.isWorkerFrame || window !== window.top) return;
+    lss.addTool({ label: '⏰ Fahrzeuge zurück? (lange am Einsatz, leere Wachen)', scope: 'all', order: 47, run: start });
+
+    // Nur auf der Hauptseite mit Karte regelmäßig nachsehen
+    if (location.pathname === '/' && document.querySelector('#missions, .missionSideBarEntry, #map')) {
+        const run = lss.safe('Fahrzeuge zurück', tick);
+        setTimeout(run, 20000);
+        setInterval(run, CHECK_MINUTES * 60000);
+    }
+})();
+
 // ===== fahrzeugnamen-karte.js =====
 // LSS Fahrzeugnamen auf der Karte ausblenden
 // Das Spiel blendet die Namen manchmal wieder ein, obwohl sie in den Einstellungen aus sind
@@ -3700,6 +3867,148 @@ const lss = (() => {
     script.textContent = PAGE_CODE;
     (document.head || document.documentElement).append(script);
     script.remove();
+})();
+
+// ===== patienten.js =====
+// LSS Patienten-Übersicht
+// Listet alle Einsätze aus der Einsatzliste, bei denen Patienten noch auf Fahrzeuge warten
+// ("Wir benötigen: RTW, NEF"), z.B. offene Übergabeorte nach Bergeinsätzen. Ein Klick öffnet den Einsatz.
+// Liest nur die Einsatzliste der Hauptseite, alarmiert nichts.
+// Wird über tampermonkey-loader.user.js geladen, braucht gemeinsam.js.
+
+(function () {
+    'use strict';
+
+    const STYLE = `
+        .pt-list { overflow:auto; flex:1; padding:6px 0 12px; }
+        .pt-section { color:#8b929c; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; padding:12px 18px 6px; }
+        .pt-row { display:grid; grid-template-columns:minmax(0,1.4fr) 90px minmax(0,1fr); align-items:center; gap:12px; padding:8px 18px; font-size:13px; border-bottom:1px solid #2e3238; }
+        .pt-row:hover { background:#2a2e34; }
+        .pt-name { color:#fff !important; font-weight:600; text-decoration:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .pt-name:hover { text-decoration:underline; }
+        .pt-addr { display:block; color:#8b929c; font-size:11px; font-weight:400; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .pt-count { color:#e6e6e6; font-variant-numeric:tabular-nums; }
+        .pt-needs { display:flex; flex-wrap:wrap; gap:4px; }
+        .pt-need { background:#6b2b28; color:#ffd2cf; border-radius:4px; padding:1px 7px; font-size:12px; font-weight:600; }
+        .pt-ok { color:#5cd178; }
+        .pt-tag { margin-left:6px; background:#7a5a1f; color:#fff; border-radius:4px; padding:0 5px; font-size:10px; font-weight:600; }
+        .pt-empty { padding:30px; text-align:center; color:#8b929c; }
+        .pt-foot { padding:8px 18px; color:#8b929c; font-size:11px; border-top:1px solid #3a3f47; }
+    `;
+
+    function injectStyle() {
+        if (document.getElementById('pt-style')) return;
+        const style = document.createElement('style');
+        style.id = 'pt-style';
+        style.textContent = STYLE;
+        document.head.append(style);
+    }
+
+    const ONCE = /^(LNA|OrgL)$/i;
+
+    // "Wir benötigen: NEF, RTW" → ['NEF', 'RTW']
+    const needsOf = text => (text.match(/Wir benötigen:\s*(.+)/i)?.[1] ?? '')
+        .split(/,\s*|\s+und\s+/).map(s => s.trim()).filter(Boolean);
+
+    // Alle Einsätze der Einsatzliste mit Patienten
+    function readMissions() {
+        const out = [];
+        document.querySelectorAll('.missionSideBarEntry').forEach(entry => {
+            const id = entry.getAttribute('mission_id');
+            const box = document.getElementById(`mission_patients_${id}`);
+            if (!id || !box || !box.textContent.trim()) return;
+            let info = {};
+            try { info = JSON.parse(entry.getAttribute('data-sortable-by') || '{}'); } catch (e) { /* egal */ }
+            const needs = {};
+            const add = (name, n) => { needs[name] = (needs[name] || 0) + n; };
+            let patients = 0;
+            let waiting = 0;
+            const cards = [...box.querySelectorAll('[id^="patient_"]')].filter(el => /^patient_\d+$/.test(el.id));
+            if (cards.length) {
+                for (const card of cards) {
+                    patients++;
+                    const list = needsOf(card.querySelector('[id^="patients_missing_"]')?.textContent ?? '');
+                    if (list.length) waiting++;
+                    list.forEach(n => add(n, 1));
+                }
+            } else {
+                // Zusammengefasst bei vielen Patienten: "13 Patienten 13x Wir benötigen: LNA"
+                const text = box.textContent.replace(/\s+/g, ' ');
+                patients = Number(text.match(/(\d+)\s+Patient/i)?.[1] ?? 0);
+                for (const m of text.matchAll(/(\d+)\s*x\s*Wir benötigen:\s*([^0-9]+)/gi)) {
+                    const n = Number(m[1]);
+                    waiting += n;
+                    needsOf(`Wir benötigen: ${m[2]}`).forEach(name => add(name, n));
+                }
+            }
+            if (!patients) return;
+            // LNA und OrgL braucht der ganze Einsatz nur einmal, nicht jeder Patient
+            for (const name of Object.keys(needs)) if (ONCE.test(name)) needs[name] = 1;
+            const caption = info.caption || document.getElementById(`mission_caption_${id}`)?.firstChild?.textContent.replace(/,\s*$/, '').trim() || 'Einsatz';
+            out.push({
+                id, caption, patients, waiting, needs,
+                address: document.getElementById(`mission_address_${id}`)?.textContent.trim() ?? '',
+                href: entry.querySelector('.mission-alarm-button')?.getAttribute('href') || `/missions/${id}`,
+                handover: /Übergabe/i.test(caption),
+                alliance: !!entry.closest('#mission_list_alliance, #mission_list_alliance_event, #mission_list_sicherheitswache_alliance'),
+            });
+        });
+        return out;
+    }
+
+    function rowHtml(m) {
+        const e = lss.escapeHtml;
+        const needs = Object.entries(m.needs).sort((a, b) => b[1] - a[1]);
+        return `
+            <div class="pt-row">
+                <a class="pt-name lightbox-open" href="${e(m.href)}">${e(m.caption)}${m.handover ? '<span class="pt-tag">⛰ Übergabe</span>' : ''}${m.alliance && !/^\[Verband\]/.test(m.caption) ? '<span class="pt-tag" style="background:#2b4a6b">Verband</span>' : ''}
+                    <span class="pt-addr">${e(m.address)}</span></a>
+                <span class="pt-count">${m.patients} Patient${m.patients === 1 ? '' : 'en'}</span>
+                <span class="pt-needs">${needs.length
+                    ? needs.map(([n, c]) => `<span class="pt-need">${c}× ${e(n)}</span>`).join('')
+                    : '<span class="pt-ok">✓ versorgt / in Behandlung</span>'}</span>
+            </div>`;
+    }
+
+    function start() {
+        if (!document.querySelector('.missionSideBarEntry, #missions')) {
+            alert('Die Patienten-Übersicht liest die Einsatzliste. Bitte auf der Hauptseite (Karte mit Einsatzliste) öffnen.');
+            return;
+        }
+        injectStyle();
+        const panel = lss.openPanel({ title: 'Patienten-Übersicht', count: '', body: '<div class="pt-list"></div><div class="pt-foot">Aktualisiert sich alle paar Sekunden. Klick auf einen Einsatz öffnet ihn.</div>' });
+        const list = panel.root.querySelector('.pt-list');
+        const count = panel.root.closest('.lssr-dialog').querySelector('.lssr-count');
+        let last = '';
+        const draw = () => {
+            const missions = readMissions();
+            const waiting = missions.filter(m => Object.keys(m.needs).length)
+                .sort((a, b) => b.handover - a.handover || b.waiting - a.waiting);
+            const treated = missions.filter(m => !Object.keys(m.needs).length);
+            const html = `
+                <div class="pt-section">Warten auf Fahrzeuge (${waiting.length})</div>
+                ${waiting.length ? waiting.map(rowHtml).join('') : '<div class="pt-empty">✔ Kein Patient wartet gerade auf ein Fahrzeug.</div>'}
+                ${treated.length ? `<div class="pt-section">Versorgt oder in Behandlung (${treated.length})</div>${treated.map(rowHtml).join('')}` : ''}`;
+            const sum = waiting.reduce((s, m) => s + m.waiting, 0);
+            count.textContent = `${sum} Patient${sum === 1 ? '' : 'en'} warten · ${waiting.length} Einsätze`;
+            if (html !== last) {
+                list.innerHTML = html;
+                last = html;
+            }
+        };
+        draw();
+        const timer = setInterval(() => {
+            if (!document.body.contains(list)) return clearInterval(timer);
+            draw();
+        }, 3000);
+        list.addEventListener('click', e => { if (e.target.closest('.pt-name')) panel.close(); });
+    }
+
+    lss.actions.patients = start;
+
+    if (lss.isWorkerFrame) return;
+
+    lss.addTool({ label: '🚑 Patienten-Übersicht', scope: 'all', order: 46, run: start });
 })();
 
 // ===== schnellstart.js =====
@@ -3793,6 +4102,14 @@ const lss = (() => {
 
     // Neueste zuerst; version muss bei jedem neuen Eintrag größer werden
     const CHANGELOG = [
+        {
+            version: 24, date: '13.11.2026', title: 'Patienten-Übersicht und Fahrzeuge zurück',
+            items: [
+                '🚑 Neues Werkzeug „Patienten-Übersicht“: alle Einsätze, bei denen Patienten noch auf RTW, NEF, LNA usw. warten, Übergabeorte zuerst. Ein Klick öffnet den Einsatz',
+                '⏰ Neue Erinnerung unten links: Fahrzeuge, die länger als 60 Minuten am Einsatz stehen, und Wachen ohne freies Fahrzeug. Mit ✕ ausblendbar, bis sich etwas ändert',
+                '⛰ Einsatz-Helfer: „Bergrettungs-Ausrüstung“ heißt im Spiel „Benötigte GW-Bergrettung“ und wird jetzt richtig gezählt',
+            ],
+        },
         {
             version: 23, date: '13.11.2026', title: 'Bergrettung im Einsatz-Helfer',
             items: [
@@ -4004,4 +4321,4 @@ const lss = (() => {
 })();
 
 /* exported LSS_BUILD */
-var LSS_BUILD = {"built":"2026-11-13T22:28:21.961Z","files":[["gemeinsam.js",4],["themes.js",482],["fahrzeuge-umbenennen.js",561],["personal-zuweisen.js",661],["personal-verschieben.js",1141],["wachen-check.js",1417],["fahrzeug-uebersicht.js",1645],["personal-werben.js",1800],["auslastung.js",1907],["einsatz-helfer.js",2059],["dashboard.js",2863],["kauf-berater.js",3086],["sprechwunsch.js",3278],["fahrzeugnamen-karte.js",3634],["schnellstart.js",3706],["changelog.js",3785]]};
+var LSS_BUILD = {"built":"2026-11-13T22:33:44.282Z","files":[["gemeinsam.js",4],["themes.js",482],["fahrzeuge-umbenennen.js",561],["personal-zuweisen.js",661],["personal-verschieben.js",1141],["wachen-check.js",1417],["fahrzeug-uebersicht.js",1645],["personal-werben.js",1800],["auslastung.js",1907],["einsatz-helfer.js",2059],["dashboard.js",2863],["kauf-berater.js",3086],["sprechwunsch.js",3278],["fahrzeuge-zurueck.js",3634],["fahrzeugnamen-karte.js",3801],["patienten.js",3873],["schnellstart.js",4015],["changelog.js",4094]]};

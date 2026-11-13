@@ -107,14 +107,14 @@
         mountain_command: ['ELW Bergrettung', [151]],
         mountain_snow: ['Schneefahrzeuge', [154]],
         mountain_atv: ['ATV', [152]],
-        mountain_equipment: ['Bergrettungs-Ausrüstung', []],
+        mountain_equipment: ['GW-Bergrettung (zusätzlich)', [150, 149]], // im Spiel: "Benötigte GW-Bergrettung"
         coastal_helicopter: ['Hubschrauber (Seenot)', [161]],
         coastal_boat_large: ['Seenotrettungskreuzer', [159]],
         oneof_coastal_rescue_boat_or_boat_large: ['Seenotrettungsboot/-kreuzer', [159, 160]],
         animal_rescue: ['Tierrettung', [185, 186]],
         pump: ['Pumpen', []],
         min_pump_speed: ['Mindest-Pumpleistung (l/min)', []],
-        lift: ['Hubrettung (Winde)', [156, 157, 'eq:winch']],
+        lift: ['Hubschrauber mit Winde', [156, 157, 'eq:winch']],
         patient_transport: ['Krankentransport', []],
         patient_other_treatment: ['Sonstige Behandlung', []],
     };

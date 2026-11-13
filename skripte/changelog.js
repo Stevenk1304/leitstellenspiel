@@ -10,6 +10,14 @@
     // Neueste zuerst; version muss bei jedem neuen Eintrag größer werden
     const CHANGELOG = [
         {
+            version: 24, date: '13.11.2026', title: 'Patienten-Übersicht und Fahrzeuge zurück',
+            items: [
+                '🚑 Neues Werkzeug „Patienten-Übersicht“: alle Einsätze, bei denen Patienten noch auf RTW, NEF, LNA usw. warten, Übergabeorte zuerst. Ein Klick öffnet den Einsatz',
+                '⏰ Neue Erinnerung unten links: Fahrzeuge, die länger als 60 Minuten am Einsatz stehen, und Wachen ohne freies Fahrzeug. Mit ✕ ausblendbar, bis sich etwas ändert',
+                '⛰ Einsatz-Helfer: „Bergrettungs-Ausrüstung“ heißt im Spiel „Benötigte GW-Bergrettung“ und wird jetzt richtig gezählt',
+            ],
+        },
+        {
             version: 23, date: '13.11.2026', title: 'Bergrettung im Einsatz-Helfer',
             items: [
                 '⛰ Bei Bergeinsätzen zeigt der Einsatz-Helfer einen Hinweis: nur Bergrettung und Hubschrauber, keine RTW. Die falsche RTW-Zeile für Patienten fällt dort weg',
