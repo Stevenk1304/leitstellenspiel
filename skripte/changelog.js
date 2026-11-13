@@ -13,6 +13,7 @@
             version: 22, date: '13.11.2026', title: 'Einsatz-Helfer: Bergeinsätze',
             items: [
                 '🐛 Fahrzeuge mit Ausrüstung (z.B. GW-Bergrettung mit Drohnen) galten im Einsatz-Helfer als ausgewählt, obwohl sie nicht angehakt waren. Die Häkchen der Ladung werden jetzt nicht mehr als Fahrzeug gezählt',
+                '🐕 Die Hundestaffel (Bergrettung) zählt jetzt als Rettungshunde, z.B. bei der Gasexplosion',
             ],
         },
         {

@@ -90,7 +90,7 @@
         disaster_response_technology_equipment: ['GW-TeSi', [171]],
         disaster_response_technology_crew: ['MTW-TeSi', [173]],
         disaster_response_technology_trailer: ['Anh TeSi', [174]],
-        rescue_dog_units: ['Rettungshunde', [91, 92]],
+        rescue_dog_units: ['Rettungshunde', [91, 92, 153]],
         boats: ['Boote', [66, 70, 71]],
         diver_units: ['Taucher', [63, 69]],
         mountain: ['GW-Bergrettung', [149, 150]],

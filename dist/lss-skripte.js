@@ -2148,7 +2148,7 @@ const lss = (() => {
         disaster_response_technology_equipment: ['GW-TeSi', [171]],
         disaster_response_technology_crew: ['MTW-TeSi', [173]],
         disaster_response_technology_trailer: ['Anh TeSi', [174]],
-        rescue_dog_units: ['Rettungshunde', [91, 92]],
+        rescue_dog_units: ['Rettungshunde', [91, 92, 153]],
         boats: ['Boote', [66, 70, 71]],
         diver_units: ['Taucher', [63, 69]],
         mountain: ['GW-Bergrettung', [149, 150]],
@@ -3698,6 +3698,7 @@ const lss = (() => {
             version: 22, date: '13.11.2026', title: 'Einsatz-Helfer: Bergeinsätze',
             items: [
                 '🐛 Fahrzeuge mit Ausrüstung (z.B. GW-Bergrettung mit Drohnen) galten im Einsatz-Helfer als ausgewählt, obwohl sie nicht angehakt waren. Die Häkchen der Ladung werden jetzt nicht mehr als Fahrzeug gezählt',
+                '🐕 Die Hundestaffel (Bergrettung) zählt jetzt als Rettungshunde, z.B. bei der Gasexplosion',
             ],
         },
         {
@@ -3894,4 +3895,4 @@ const lss = (() => {
 })();
 
 /* exported LSS_BUILD */
-var LSS_BUILD = {"built":"2026-11-13T21:49:36.901Z","files":[["gemeinsam.js",4],["themes.js",482],["fahrzeuge-umbenennen.js",561],["personal-zuweisen.js",661],["personal-verschieben.js",1141],["wachen-check.js",1417],["fahrzeug-uebersicht.js",1645],["personal-werben.js",1800],["auslastung.js",1907],["einsatz-helfer.js",2059],["dashboard.js",2764],["kauf-berater.js",2987],["sprechwunsch.js",3179],["fahrzeugnamen-karte.js",3535],["schnellstart.js",3607],["changelog.js",3686]]};
+var LSS_BUILD = {"built":"2026-11-13T21:51:17.678Z","files":[["gemeinsam.js",4],["themes.js",482],["fahrzeuge-umbenennen.js",561],["personal-zuweisen.js",661],["personal-verschieben.js",1141],["wachen-check.js",1417],["fahrzeug-uebersicht.js",1645],["personal-werben.js",1800],["auslastung.js",1907],["einsatz-helfer.js",2059],["dashboard.js",2764],["kauf-berater.js",2987],["sprechwunsch.js",3179],["fahrzeugnamen-karte.js",3535],["schnellstart.js",3607],["changelog.js",3686]]};
