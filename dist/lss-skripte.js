@@ -2065,7 +2065,7 @@ const lss = (() => {
     'use strict';
 
     // Bei Änderungen am gespeicherten Format die Nummer erhöhen, damit neu geladen wird
-    const CACHE_KEY = 'einsatzHelfer.missions.v3';
+    const CACHE_KEY = 'einsatzHelfer.missions.v4';
     const CACHE_HOURS = 24;
 
     // Fahrzeuggruppen (Typ-Nummern aus der LSSM-API). Nach bestem Wissen zugeordnet;
@@ -2073,6 +2073,15 @@ const lss = (() => {
     const LF = [0, 1, 6, 7, 8, 9, 30, 37, 88, 89, 90, 107, 163];
     const RW = [4, 30, 47, 90, 162, 163];
     const FUSTW = [32, 103, 184];
+
+    // Ausrüstung, die ein Fahrzeug zusätzlich mitzählen lässt (z.B. GW-Bergrettung mit Drohnen).
+    // Name der Ausrüstung im Spiel → Platzhalter-Typ, der in den Typlisten unten steht.
+    const EQUIPMENT = [{ re: /Drohne/i, id: 'eq:drone' }, { re: /Winde/i, id: 'eq:winch' }];
+    const equipIds = text => EQUIPMENT.filter(x => x.re.test(text ?? '')).map(x => x.id);
+
+    // Fahrzeuge, die das Spiel nur zu Bergeinsätzen lässt (im Spiel geprüft: fehlen in der Alarmliste
+    // normaler Einsätze). Hundestaffel und GW-Höhenrettung der Bergrettung dürfen dagegen überall hin.
+    const MOUNTAIN_ONLY = [149, 150, 151, 152, 154];
 
     // Anforderung → Bezeichnung und Fahrzeugtypen, die sie erfüllen
     const REQ = {
@@ -2100,7 +2109,7 @@ const lss = (() => {
         teleskopmast: ['Teleskopmasten', [85]],
         turboloescher: ['Turbolöscher', [86]],
         helicopter_bucket: ['Außenlastbehälter', [96]],
-        drone: ['Drohnen', [126, 127, 128, 129]],
+        drone: ['Drohnen', [126, 127, 128, 129, 'eq:drone']],
         oneof_fire_engine_or_rescue: ['Löschfahrzeug oder Rüstwagen', [...LF, ...RW]],
         oneof_fire_engine_or_rescue_or_oil_equipment: ['LF, RW oder GW-Öl', [...LF, ...RW, 10, 49]],
         ambulances: ['RTW', [28, 73, 74]],
@@ -2163,7 +2172,7 @@ const lss = (() => {
         animal_rescue: ['Tierrettung', [185, 186]],
         pump: ['Pumpen', []],
         min_pump_speed: ['Mindest-Pumpleistung (l/min)', []],
-        lift: ['Hubrettung', []],
+        lift: ['Hubrettung (Winde)', [156, 157, 'eq:winch']],
         patient_transport: ['Krankentransport', []],
         patient_other_treatment: ['Sonstige Behandlung', []],
     };
@@ -2201,6 +2210,7 @@ const lss = (() => {
         .eh-ok { color:#5cd178; font-weight:700; }
         .eh-chance { color:#e6a23c; font-size:11px; margin-left:4px; }
         .eh-info { display:flex; flex-wrap:wrap; gap:6px 16px; padding:8px 12px; color:#aab0b8; border-top:1px solid #3a3f47; background:#1c1f23; }
+        .eh-note { padding:8px 12px; color:#ffe7a8; background:#3a3220; border-bottom:1px solid #3a3f47; line-height:1.4; }
         .eh-info b { color:#fff; }
         .eh-actions { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:8px 12px; border-top:1px solid #3a3f47; }
         .eh-pick { background:#2ea043; color:#fff; border:0; border-radius:6px; padding:6px 14px; font-weight:600; cursor:pointer; }
@@ -2239,6 +2249,8 @@ const lss = (() => {
                     ktwInsteadOfRtw: m.additional?.allow_ktw_instead_of_rtw,
                     ktwBInsteadOfRtw: m.additional?.allow_ktw_b_instead_of_rtw,
                     specializations: m.additional?.patient_specializations,
+                    mountain: m.additional?.filter_id === 'mountain_missions'
+                        || (m.additional?.vehicle_groups ?? []).includes('mountain_missions'),
                 },
                 personnel: Object.fromEntries(Object.keys(ORGS)
                     .map(o => [o, m.additional?.[`average_min_${o}_personnel`]])
@@ -2393,7 +2405,10 @@ const lss = (() => {
             }
             const col = table ? distCol.get(table) : -1;
             const dist = col >= 0 ? parseDistance(row.cells[col]?.textContent ?? '') : Infinity;
-            found.set(key, { id, type, input, checked: input.checked, dist });
+            // Angehakte Ausrüstung in der Ladung (Standard-Ausrüstung ist vorab angehakt)
+            const equip = row ? [...row.querySelectorAll('.equipment-checkbox:checked')]
+                .flatMap(c => equipIds(c.dataset.equipmentCaption || c.closest('label')?.textContent)) : [];
+            found.set(key, { id, type, input, checked: input.checked, dist, equip: [...new Set(equip)] });
         });
         return [...found.values()].sort((a, b) => a.dist - b.dist);
     }
@@ -2407,11 +2422,17 @@ const lss = (() => {
             document.querySelectorAll(sel).forEach(el => {
                 const t = Number(el.getAttribute('vehicle_type_id'));
                 if (!Number.isNaN(t)) c[t] = (c[t] || 0) + 1;
+                // "(+Ausrüstung: Drohnen)" in der Zeile des Fahrzeugs
+                const eq = el.closest('tr')?.textContent.match(/\(\+Ausrüstung:([^)]*)\)/)?.[1];
+                for (const id of equipIds(eq)) c[id] = (c[id] || 0) + 1;
             });
             return c;
         };
         const picked = {};
-        for (const v of selected) picked[v.type] = (picked[v.type] || 0) + 1;
+        for (const v of selected) {
+            picked[v.type] = (picked[v.type] || 0) + 1;
+            for (const id of v.equip ?? []) picked[id] = (picked[id] || 0) + 1;
+        }
         return {
             scene: count('#mission_vehicle_at_mission a[vehicle_type_id]'),
             driving: count('#mission_vehicle_driving a[vehicle_type_id]'),
@@ -2479,7 +2500,8 @@ const lss = (() => {
         // Patienten brauchen je einen RTW (oder KTW, wo das Spiel es erlaubt), sofern der Einsatz nicht
         // ohnehin feste RTW verlangt. Zahl aus dem Alarmfenster, sonst die Mindestzahl aus den Spieldaten.
         const patients = counts.patients ?? m.add.patientsMin ?? 0;
-        if (patients > 0 && !('ambulances' in m.req)) {
+        // Bei Bergeinsätzen dürfen keine RTW hin: die Patienten kommen später als eigener Einsatz "Übergabeort"
+        if (patients > 0 && !('ambulances' in m.req) && !m.add.mountain) {
             const typeIds = [...REQ.ambulances[1], ...(m.add.ktwInsteadOfRtw ? [38] : []), ...(m.add.ktwBInsteadOfRtw ? [58] : [])];
             rows.push({
                 key: 'ambulances', label: `RTW (${patients} Patient${patients === 1 ? '' : 'en'})`, needed: patients, chance: null, typeIds,
@@ -2580,7 +2602,7 @@ const lss = (() => {
     function pickMissing(m, types, ownVehicles, computeRows) {
         const picked = [];
         const fits = (r, v) => {
-            if (r.typeIds) return r.typeIds.includes(v.type);
+            if (r.typeIds) return r.typeIds.includes(v.type) || (v.equip ?? []).some(id => r.typeIds.includes(id));
             if (r.tank) return (types[v.type]?.[r.tank] || 0) > 0;
             if (r.org) {
                 const org = orgOf(types[v.type]);
@@ -2628,6 +2650,13 @@ const lss = (() => {
             m.add.followup ? '↪ Folgeeinsatz möglich' : '',
         ].filter(Boolean);
 
+        const note = m.add.mountain
+            ? '⛰ <b>Bergeinsatz:</b> Hier dürfen nur Fahrzeuge der Bergrettung und Hubschrauber hin, keine RTW. '
+                + 'Den Patienten bringt die Bergrettung zu einem neuen Einsatz „Übergabeort“, dort kommen RTW und NEF dazu.'
+            : m.handover
+                ? '🚑 <b>Übergabeort:</b> Die Bergrettung übergibt hier ihren Patienten. Jetzt RTW und NEF schicken.'
+                : '';
+
         box.className = `eh-box${collapsed ? ' collapsed' : ''}`;
         box.innerHTML = `
             <div class="eh-head">
@@ -2636,6 +2665,7 @@ const lss = (() => {
                 <span>${collapsed ? '▸' : '▾'}</span>
             </div>
             <div class="eh-body">
+                ${note ? `<div class="eh-note">${note}</div>` : ''}
                 ${rows.length ? `
                 <table class="eh-table">
                     <thead><tr><th>Benötigt</th><th>Soll</th><th>Vor Ort</th><th>Anfahrt</th><th>Gewählt</th><th>Fehlt</th></tr></thead>
@@ -2680,6 +2710,7 @@ const lss = (() => {
             name: anchor.id === 'missionH1' ? anchor.textContent.trim() : (document.querySelector('#missionH1')?.textContent.trim() ?? 'Einsatz'),
             req: {}, chances: {}, add: {}, personnel: {}, inclusions: {},
         };
+        m.handover = !key && /Übergabe/i.test(m.name);
         // Für den Kauf-Berater: welche Einsätze bei dir vorkommen
         const missionId = location.pathname.match(/\/missions\/(\d+)/)[1];
         if (key) lss.actions.recordMission?.(missionId, key);
@@ -2725,23 +2756,26 @@ const lss = (() => {
             JSON.stringify(patientNeedsOnPage()),
             JSON.stringify(gameMissingOnPage()),
         ].join('|');
+        const runPick = auto => {
+            picking = true;
+            let result;
+            try {
+                result = pickMissing(m, types, ownVehicles, computeRows);
+            } finally {
+                picking = false;
+            }
+            const e2 = lss.escapeHtml;
+            const rest = result.stillMissing.map(r => e2(r.label));
+            // Für den Kauf-Berater: wofür kein freies Fahrzeug da war
+            result.stillMissing.filter(r => r.key).forEach(r => lss.actions.recordShortage?.(missionId, r.key));
+            pickMsg = result.picked
+                ? `${auto ? 'Automatisch ' : ''}<b>${result.picked}</b> Fahrzeug${result.picked === 1 ? '' : 'e'} ausgewählt. Alarmieren musst du selbst.${rest.length ? ` Kein freies Fahrzeug für: ${rest.join(', ')}` : ''}`
+                : auto ? '' : `Kein passendes freies Fahrzeug in der Liste${rest.length ? ` für: ${rest.join(', ')}` : ''}.`;
+            update();
+        };
         box.addEventListener('click', e => {
             if (e.target.closest('.eh-pick')) {
-                picking = true;
-                let result;
-                try {
-                    result = pickMissing(m, types, ownVehicles, computeRows);
-                } finally {
-                    picking = false;
-                }
-                const e2 = lss.escapeHtml;
-                const rest = result.stillMissing.map(r => e2(r.label));
-                // Für den Kauf-Berater: wofür kein freies Fahrzeug da war
-                result.stillMissing.filter(r => r.key).forEach(r => lss.actions.recordShortage?.(missionId, r.key));
-                pickMsg = result.picked
-                    ? `<b>${result.picked}</b> Fahrzeug${result.picked === 1 ? '' : 'e'} ausgewählt. Alarmieren musst du selbst.${rest.length ? ` Kein freies Fahrzeug für: ${rest.join(', ')}` : ''}`
-                    : `Kein passendes freies Fahrzeug in der Liste${rest.length ? ` für: ${rest.join(', ')}` : ''}.`;
-                update();
+                runPick(false);
                 return;
             }
             if (!e.target.closest('.eh-head')) return;
@@ -2754,6 +2788,18 @@ const lss = (() => {
         document.addEventListener('change', () => update());
         setInterval(() => { if (state() !== lastState) update(); }, 500);
         update();
+        // Übergabeort: passende RTW/NEF gleich vorschlagen (nur anhaken, nie alarmieren),
+        // sobald die Patienten-Kärtchen da sind und noch nichts angehakt ist
+        if (m.handover) {
+            let tries = 0;
+            const timer = setInterval(() => {
+                tries++;
+                const ready = patientsOnPage() > 0;
+                if (!ready && tries < 20) return;
+                clearInterval(timer);
+                if (ready && !selectedVehicles(ownVehicles).length) runPick(true);
+            }, 300);
+        }
     }
 
     if (lss.isWorkerFrame) return;
@@ -2762,6 +2808,55 @@ const lss = (() => {
     lss.actions.missionTypes = getMissionTypes;
 
     lss.safe('Einsatz-Helfer', init)();
+
+    // "Wer darf hin?": Schild an Fahrzeugen, die das Spiel nur zu bestimmten Einsätzen lässt
+    // (Wachenseite: Fahrzeugliste, Fahrzeugseite: Überschrift)
+    const BOTH = [153, 158]; // Hundestaffel und GW-Höhenrettung der Bergrettung: Berg- und normale Einsätze
+    function reachBadge(type, buildingType) {
+        const make = (text, title, color) => {
+            const b = document.createElement('span');
+            b.className = 'label';
+            b.style.cssText = `margin-left:6px;background:${color};color:#fff;font-size:11px;font-weight:600;`;
+            b.textContent = text;
+            b.title = title;
+            return b;
+        };
+        if (MOUNTAIN_ONLY.includes(type)) {
+            return make('⛰ nur Bergeinsätze', 'Das Spiel zeigt dieses Fahrzeug nur bei Bergeinsätzen in der Alarmliste, nicht bei normalen Einsätzen.', '#7a5a1f');
+        }
+        if (BOTH.includes(type)) {
+            return make('⛰ Berg + normale Einsätze', 'Darf zu Bergeinsätzen und zu normalen Einsätzen.', '#3d6b3d');
+        }
+        if (buildingType === 25) {
+            return make('🚫 keine Bergeinsätze', 'Bei Bergeinsätzen dürfen nur Fahrzeuge der Bergrettung und Hubschrauber hin. Dieses Fahrzeug fährt nur zu normalen Einsätzen.', '#6b3d3d');
+        }
+        return null;
+    }
+
+    async function initReach() {
+        const building = location.pathname.match(/^\/buildings\/(\d+)\/?$/);
+        const vehicle = location.pathname.match(/^\/vehicles\/(\d+)\/?$/);
+        if (building) {
+            const table = document.querySelector('#vehicle_table');
+            if (!table) return;
+            const b = await lss.getJSON(`/api/buildings/${building[1]}`);
+            table.querySelectorAll('tbody tr').forEach(row => {
+                const type = Number(row.querySelector('img[vehicle_type_id]')?.getAttribute('vehicle_type_id'));
+                const link = row.querySelector('a[href^="/vehicles/"]:not([href$="/edit"])');
+                const badge = link && !Number.isNaN(type) && reachBadge(type, b.building_type);
+                if (badge) link.after(badge);
+            });
+        } else if (vehicle) {
+            const h1 = document.querySelector('h1.vehicle_caption, h1');
+            if (!h1) return;
+            const v = await lss.getJSON(`/api/vehicles/${vehicle[1]}`);
+            const b = MOUNTAIN_ONLY.includes(v.vehicle_type) || BOTH.includes(v.vehicle_type)
+                ? null : await lss.getJSON(`/api/buildings/${v.building_id}`).catch(() => null);
+            const badge = reachBadge(v.vehicle_type, b?.building_type);
+            if (badge) h1.append(badge);
+        }
+    }
+    lss.safe('Einsatz-Helfer (Wer darf hin?)', initReach)();
 })();
 
 // ===== dashboard.js =====
@@ -3699,6 +3794,15 @@ const lss = (() => {
     // Neueste zuerst; version muss bei jedem neuen Eintrag größer werden
     const CHANGELOG = [
         {
+            version: 23, date: '13.11.2026', title: 'Bergrettung im Einsatz-Helfer',
+            items: [
+                '⛰ Bei Bergeinsätzen zeigt der Einsatz-Helfer einen Hinweis: nur Bergrettung und Hubschrauber, keine RTW. Die falsche RTW-Zeile für Patienten fällt dort weg',
+                '🛸 Ausrüstung zählt mit: ein GW-Bergrettung mit Drohnen zählt als Drohne, ein RTH mit Rettungswinde als Hubrettung. „Fehlendes auswählen“ nimmt solche Fahrzeuge mit',
+                '🚑 Beim „Übergabeort“ werden der nächste freie RTW und NEF automatisch angehakt (alarmieren musst du selbst)',
+                '🏷 Auf Wachen- und Fahrzeugseite zeigen Schilder, wer wohin darf: „nur Bergeinsätze“, „Berg + normale Einsätze“ oder an der Bergrettung „keine Bergeinsätze“',
+            ],
+        },
+        {
             version: 22, date: '13.11.2026', title: 'Einsatz-Helfer: Bergeinsätze',
             items: [
                 '🐛 Fahrzeuge mit Ausrüstung (z.B. GW-Bergrettung mit Drohnen) galten im Einsatz-Helfer als ausgewählt, obwohl sie nicht angehakt waren. Die Häkchen der Ladung werden jetzt nicht mehr als Fahrzeug gezählt',
@@ -3900,4 +4004,4 @@ const lss = (() => {
 })();
 
 /* exported LSS_BUILD */
-var LSS_BUILD = {"built":"2026-11-13T22:18:12.770Z","files":[["gemeinsam.js",4],["themes.js",482],["fahrzeuge-umbenennen.js",561],["personal-zuweisen.js",661],["personal-verschieben.js",1141],["wachen-check.js",1417],["fahrzeug-uebersicht.js",1645],["personal-werben.js",1800],["auslastung.js",1907],["einsatz-helfer.js",2059],["dashboard.js",2768],["kauf-berater.js",2991],["sprechwunsch.js",3183],["fahrzeugnamen-karte.js",3539],["schnellstart.js",3611],["changelog.js",3690]]};
+var LSS_BUILD = {"built":"2026-11-13T22:28:21.961Z","files":[["gemeinsam.js",4],["themes.js",482],["fahrzeuge-umbenennen.js",561],["personal-zuweisen.js",661],["personal-verschieben.js",1141],["wachen-check.js",1417],["fahrzeug-uebersicht.js",1645],["personal-werben.js",1800],["auslastung.js",1907],["einsatz-helfer.js",2059],["dashboard.js",2863],["kauf-berater.js",3086],["sprechwunsch.js",3278],["fahrzeugnamen-karte.js",3634],["schnellstart.js",3706],["changelog.js",3785]]};

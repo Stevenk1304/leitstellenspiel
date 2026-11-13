@@ -10,6 +10,15 @@
     // Neueste zuerst; version muss bei jedem neuen Eintrag größer werden
     const CHANGELOG = [
         {
+            version: 23, date: '13.11.2026', title: 'Bergrettung im Einsatz-Helfer',
+            items: [
+                '⛰ Bei Bergeinsätzen zeigt der Einsatz-Helfer einen Hinweis: nur Bergrettung und Hubschrauber, keine RTW. Die falsche RTW-Zeile für Patienten fällt dort weg',
+                '🛸 Ausrüstung zählt mit: ein GW-Bergrettung mit Drohnen zählt als Drohne, ein RTH mit Rettungswinde als Hubrettung. „Fehlendes auswählen“ nimmt solche Fahrzeuge mit',
+                '🚑 Beim „Übergabeort“ werden der nächste freie RTW und NEF automatisch angehakt (alarmieren musst du selbst)',
+                '🏷 Auf Wachen- und Fahrzeugseite zeigen Schilder, wer wohin darf: „nur Bergeinsätze“, „Berg + normale Einsätze“ oder an der Bergrettung „keine Bergeinsätze“',
+            ],
+        },
+        {
             version: 22, date: '13.11.2026', title: 'Einsatz-Helfer: Bergeinsätze',
             items: [
                 '🐛 Fahrzeuge mit Ausrüstung (z.B. GW-Bergrettung mit Drohnen) galten im Einsatz-Helfer als ausgewählt, obwohl sie nicht angehakt waren. Die Häkchen der Ladung werden jetzt nicht mehr als Fahrzeug gezählt',
