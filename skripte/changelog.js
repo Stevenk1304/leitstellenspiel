@@ -14,6 +14,7 @@
             items: [
                 '🐛 Fahrzeuge mit Ausrüstung (z.B. GW-Bergrettung mit Drohnen) galten im Einsatz-Helfer als ausgewählt, obwohl sie nicht angehakt waren. Die Häkchen der Ladung werden jetzt nicht mehr als Fahrzeug gezählt',
                 '🐕 Die Hundestaffel (Bergrettung) zählt jetzt als Rettungshunde, z.B. bei der Gasexplosion',
+                '🚑 Der Einsatz-Helfer erscheint jetzt auch beim „Übergabeort“ (Patient nach Bergeinsatz) und zeigt, ob RTW und NEF da sind',
             ],
         },
         {

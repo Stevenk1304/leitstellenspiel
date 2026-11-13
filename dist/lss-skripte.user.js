@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LSS Skripte
 // @namespace    https://github.com/Stevenk1304/leitstellenspiel
-// @version      3.20261113.2251
+// @version      3.20261113.2318
 // @description  Eigene Werkzeuge für leitstellenspiel.de (Menü 🛠 Werkzeuge in der Spiel-Leiste)
 // @match        https://www.leitstellenspiel.de/*
 // @match        https://leitstellenspiel.de/*
@@ -2694,11 +2694,15 @@ const lss = (() => {
             return;
         }
         const key = missionTypeKey(missions);
-        if (!key) return;
-        const m = missions[key];
+        // Einsätze ohne Einsatztyp (z.B. "Übergabeort" nach Bergeinsätzen) haben keine Anforderungen
+        // in /einsaetze.json. Dann zählen nur die Patienten und ihre Wünsche ("Wir benötigen: NEF, RTW").
+        const m = key ? missions[key] : {
+            name: anchor.id === 'missionH1' ? anchor.textContent.trim() : (document.querySelector('#missionH1')?.textContent.trim() ?? 'Einsatz'),
+            req: {}, chances: {}, add: {}, personnel: {}, inclusions: {},
+        };
         // Für den Kauf-Berater: welche Einsätze bei dir vorkommen
         const missionId = location.pathname.match(/\/missions\/(\d+)/)[1];
-        lss.actions.recordMission?.(missionId, key);
+        if (key) lss.actions.recordMission?.(missionId, key);
 
         injectStyle(document);
         const box = document.createElement('div');
@@ -3719,6 +3723,7 @@ const lss = (() => {
             items: [
                 '🐛 Fahrzeuge mit Ausrüstung (z.B. GW-Bergrettung mit Drohnen) galten im Einsatz-Helfer als ausgewählt, obwohl sie nicht angehakt waren. Die Häkchen der Ladung werden jetzt nicht mehr als Fahrzeug gezählt',
                 '🐕 Die Hundestaffel (Bergrettung) zählt jetzt als Rettungshunde, z.B. bei der Gasexplosion',
+                '🚑 Der Einsatz-Helfer erscheint jetzt auch beim „Übergabeort“ (Patient nach Bergeinsatz) und zeigt, ob RTW und NEF da sind',
             ],
         },
         {
@@ -3915,4 +3920,4 @@ const lss = (() => {
 })();
 
 /* exported LSS_BUILD */
-var LSS_BUILD = {"built":"2026-11-13T21:51:17.678Z","files":[["gemeinsam.js",24],["themes.js",502],["fahrzeuge-umbenennen.js",581],["personal-zuweisen.js",681],["personal-verschieben.js",1161],["wachen-check.js",1437],["fahrzeug-uebersicht.js",1665],["personal-werben.js",1820],["auslastung.js",1927],["einsatz-helfer.js",2079],["dashboard.js",2784],["kauf-berater.js",3007],["sprechwunsch.js",3199],["fahrzeugnamen-karte.js",3555],["schnellstart.js",3627],["changelog.js",3706]]};
+var LSS_BUILD = {"built":"2026-11-13T22:18:12.770Z","files":[["gemeinsam.js",24],["themes.js",502],["fahrzeuge-umbenennen.js",581],["personal-zuweisen.js",681],["personal-verschieben.js",1161],["wachen-check.js",1437],["fahrzeug-uebersicht.js",1665],["personal-werben.js",1820],["auslastung.js",1927],["einsatz-helfer.js",2079],["dashboard.js",2788],["kauf-berater.js",3011],["sprechwunsch.js",3203],["fahrzeugnamen-karte.js",3559],["schnellstart.js",3631],["changelog.js",3710]]};

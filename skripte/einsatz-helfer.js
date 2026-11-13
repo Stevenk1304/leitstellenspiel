@@ -616,11 +616,15 @@
             return;
         }
         const key = missionTypeKey(missions);
-        if (!key) return;
-        const m = missions[key];
+        // Einsätze ohne Einsatztyp (z.B. "Übergabeort" nach Bergeinsätzen) haben keine Anforderungen
+        // in /einsaetze.json. Dann zählen nur die Patienten und ihre Wünsche ("Wir benötigen: NEF, RTW").
+        const m = key ? missions[key] : {
+            name: anchor.id === 'missionH1' ? anchor.textContent.trim() : (document.querySelector('#missionH1')?.textContent.trim() ?? 'Einsatz'),
+            req: {}, chances: {}, add: {}, personnel: {}, inclusions: {},
+        };
         // Für den Kauf-Berater: welche Einsätze bei dir vorkommen
         const missionId = location.pathname.match(/\/missions\/(\d+)/)[1];
-        lss.actions.recordMission?.(missionId, key);
+        if (key) lss.actions.recordMission?.(missionId, key);
 
         injectStyle(document);
         const box = document.createElement('div');

@@ -2674,11 +2674,15 @@ const lss = (() => {
             return;
         }
         const key = missionTypeKey(missions);
-        if (!key) return;
-        const m = missions[key];
+        // Einsätze ohne Einsatztyp (z.B. "Übergabeort" nach Bergeinsätzen) haben keine Anforderungen
+        // in /einsaetze.json. Dann zählen nur die Patienten und ihre Wünsche ("Wir benötigen: NEF, RTW").
+        const m = key ? missions[key] : {
+            name: anchor.id === 'missionH1' ? anchor.textContent.trim() : (document.querySelector('#missionH1')?.textContent.trim() ?? 'Einsatz'),
+            req: {}, chances: {}, add: {}, personnel: {}, inclusions: {},
+        };
         // Für den Kauf-Berater: welche Einsätze bei dir vorkommen
         const missionId = location.pathname.match(/\/missions\/(\d+)/)[1];
-        lss.actions.recordMission?.(missionId, key);
+        if (key) lss.actions.recordMission?.(missionId, key);
 
         injectStyle(document);
         const box = document.createElement('div');
@@ -3699,6 +3703,7 @@ const lss = (() => {
             items: [
                 '🐛 Fahrzeuge mit Ausrüstung (z.B. GW-Bergrettung mit Drohnen) galten im Einsatz-Helfer als ausgewählt, obwohl sie nicht angehakt waren. Die Häkchen der Ladung werden jetzt nicht mehr als Fahrzeug gezählt',
                 '🐕 Die Hundestaffel (Bergrettung) zählt jetzt als Rettungshunde, z.B. bei der Gasexplosion',
+                '🚑 Der Einsatz-Helfer erscheint jetzt auch beim „Übergabeort“ (Patient nach Bergeinsatz) und zeigt, ob RTW und NEF da sind',
             ],
         },
         {
@@ -3895,4 +3900,4 @@ const lss = (() => {
 })();
 
 /* exported LSS_BUILD */
-var LSS_BUILD = {"built":"2026-11-13T21:51:17.678Z","files":[["gemeinsam.js",4],["themes.js",482],["fahrzeuge-umbenennen.js",561],["personal-zuweisen.js",661],["personal-verschieben.js",1141],["wachen-check.js",1417],["fahrzeug-uebersicht.js",1645],["personal-werben.js",1800],["auslastung.js",1907],["einsatz-helfer.js",2059],["dashboard.js",2764],["kauf-berater.js",2987],["sprechwunsch.js",3179],["fahrzeugnamen-karte.js",3535],["schnellstart.js",3607],["changelog.js",3686]]};
+var LSS_BUILD = {"built":"2026-11-13T22:18:12.770Z","files":[["gemeinsam.js",4],["themes.js",482],["fahrzeuge-umbenennen.js",561],["personal-zuweisen.js",661],["personal-verschieben.js",1141],["wachen-check.js",1417],["fahrzeug-uebersicht.js",1645],["personal-werben.js",1800],["auslastung.js",1907],["einsatz-helfer.js",2059],["dashboard.js",2768],["kauf-berater.js",2991],["sprechwunsch.js",3183],["fahrzeugnamen-karte.js",3539],["schnellstart.js",3611],["changelog.js",3690]]};
