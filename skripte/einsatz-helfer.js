@@ -574,6 +574,12 @@
         return rows.sort((a, b) => (b.missing > 0) - (a.missing > 0) || (a.chance != null) - (b.chance != null) || b.needed - a.needed);
     }
 
+    // Ab dieser Wahrscheinlichkeit wählt "Fehlendes auswählen" das Fahrzeug mit aus (z.B. NEF 80 %)
+    const CHANCE_PICK = 50;
+    // Hubschrauber (RTH, RTH Winde, Polizeihubschrauber): beim Auswählen nach hinten
+    const HELICOPTERS = [31, 61, 156, 157, 161];
+    const wanted = r => r.chance == null || r.chance >= CHANCE_PICK;
+
     // Hakt für jede sicher fehlende Anforderung das nächste passende, noch nicht gewählte Fahrzeug an.
     // Alarmiert wird nichts, das bleibt beim Spieler. computeRows liefert die Zeilen zum aktuellen Stand.
     function pickMissing(m, types, ownVehicles, computeRows) {
@@ -592,19 +598,21 @@
         const order = r => (r.typeIds ? 0 : r.tank ? 1 : 2);
         for (let guard = 0; guard < 80; guard++) {
             const open = computeRows()
-                .filter(r => r.missing > 0 && r.chance == null && !r.unknown && (r.typeIds || r.tank || r.org))
+                .filter(r => r.missing > 0 && wanted(r) && !r.unknown && (r.typeIds || r.tank || r.org))
                 .sort((a, b) => order(a) - order(b));
             const free = alarmList(ownVehicles).filter(v => !v.checked);
             let choice = null;
             for (const r of open) {
-                choice = free.find(v => fits(r, v));
+                // Hubschrauber nur, wenn kein Fahrzeug am Boden passt (z.B. NEF vor RTH)
+                const fitting = free.filter(v => fits(r, v));
+                choice = fitting.find(v => !HELICOPTERS.includes(v.type)) ?? fitting[0] ?? null;
                 if (choice) break;
             }
             if (!choice) break;
             choice.input.click();
             picked.push(choice);
         }
-        const stillMissing = computeRows().filter(r => r.missing > 0 && r.chance == null);
+        const stillMissing = computeRows().filter(r => r.missing > 0 && wanted(r));
         return { picked: picked.length, stillMissing };
     }
 
@@ -614,6 +622,8 @@
         const num = n => n ? fmt(n) : '<span class="eh-zero">0</span>';
         const sure = rows.filter(r => r.chance == null && !r.unknown);
         const missingCount = sure.filter(r => r.missing > 0).length;
+        // Knopf auch für Fahrzeuge, die wahrscheinlich gebraucht werden (ab CHANCE_PICK)
+        const pickable = rows.some(r => r.missing > 0 && wanted(r) && !r.unknown && (r.typeIds || r.tank || r.org));
         const info = [
             m.credits ? `💰 <b>~${fmt(m.credits)}</b> Credits` : '',
             m.add.patients ? `🚑 bis zu <b>${m.add.patients}</b> Patienten${m.add.patientsMin ? ` (mind. ${m.add.patientsMin})` : ''}` : '',
@@ -659,9 +669,9 @@
                         </tr>`).join('')}
                     </tbody>
                 </table>` : '<div class="eh-info">Keine besonderen Anforderungen: ein passendes Fahrzeug reicht.</div>'}
-                ${missingCount || pickMsg ? `
+                ${pickable || pickMsg ? `
                 <div class="eh-actions">
-                    ${missingCount ? '<button type="button" class="eh-pick">✓ Fehlendes auswählen</button>' : ''}
+                    ${pickable ? '<button type="button" class="eh-pick">✓ Fehlendes auswählen</button>' : ''}
                     ${pickMsg ? `<span class="eh-msg">${pickMsg}</span>` : ''}
                 </div>` : ''}
                 ${info.length ? `<div class="eh-info">${info.map(i => `<span>${i}</span>`).join('')}</div>` : ''}

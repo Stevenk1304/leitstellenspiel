@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LSS Skripte
 // @namespace    https://github.com/Stevenk1304/leitstellenspiel
-// @version      3.20261113.2344
+// @version      3.20261113.2347
 // @description  Eigene Werkzeuge für leitstellenspiel.de (Menü 🛠 Werkzeuge in der Spiel-Leiste)
 // @match        https://www.leitstellenspiel.de/*
 // @match        https://leitstellenspiel.de/*
@@ -2652,6 +2652,12 @@ const lss = (() => {
         return rows.sort((a, b) => (b.missing > 0) - (a.missing > 0) || (a.chance != null) - (b.chance != null) || b.needed - a.needed);
     }
 
+    // Ab dieser Wahrscheinlichkeit wählt "Fehlendes auswählen" das Fahrzeug mit aus (z.B. NEF 80 %)
+    const CHANCE_PICK = 50;
+    // Hubschrauber (RTH, RTH Winde, Polizeihubschrauber): beim Auswählen nach hinten
+    const HELICOPTERS = [31, 61, 156, 157, 161];
+    const wanted = r => r.chance == null || r.chance >= CHANCE_PICK;
+
     // Hakt für jede sicher fehlende Anforderung das nächste passende, noch nicht gewählte Fahrzeug an.
     // Alarmiert wird nichts, das bleibt beim Spieler. computeRows liefert die Zeilen zum aktuellen Stand.
     function pickMissing(m, types, ownVehicles, computeRows) {
@@ -2670,19 +2676,21 @@ const lss = (() => {
         const order = r => (r.typeIds ? 0 : r.tank ? 1 : 2);
         for (let guard = 0; guard < 80; guard++) {
             const open = computeRows()
-                .filter(r => r.missing > 0 && r.chance == null && !r.unknown && (r.typeIds || r.tank || r.org))
+                .filter(r => r.missing > 0 && wanted(r) && !r.unknown && (r.typeIds || r.tank || r.org))
                 .sort((a, b) => order(a) - order(b));
             const free = alarmList(ownVehicles).filter(v => !v.checked);
             let choice = null;
             for (const r of open) {
-                choice = free.find(v => fits(r, v));
+                // Hubschrauber nur, wenn kein Fahrzeug am Boden passt (z.B. NEF vor RTH)
+                const fitting = free.filter(v => fits(r, v));
+                choice = fitting.find(v => !HELICOPTERS.includes(v.type)) ?? fitting[0] ?? null;
                 if (choice) break;
             }
             if (!choice) break;
             choice.input.click();
             picked.push(choice);
         }
-        const stillMissing = computeRows().filter(r => r.missing > 0 && r.chance == null);
+        const stillMissing = computeRows().filter(r => r.missing > 0 && wanted(r));
         return { picked: picked.length, stillMissing };
     }
 
@@ -2692,6 +2700,8 @@ const lss = (() => {
         const num = n => n ? fmt(n) : '<span class="eh-zero">0</span>';
         const sure = rows.filter(r => r.chance == null && !r.unknown);
         const missingCount = sure.filter(r => r.missing > 0).length;
+        // Knopf auch für Fahrzeuge, die wahrscheinlich gebraucht werden (ab CHANCE_PICK)
+        const pickable = rows.some(r => r.missing > 0 && wanted(r) && !r.unknown && (r.typeIds || r.tank || r.org));
         const info = [
             m.credits ? `💰 <b>~${fmt(m.credits)}</b> Credits` : '',
             m.add.patients ? `🚑 bis zu <b>${m.add.patients}</b> Patienten${m.add.patientsMin ? ` (mind. ${m.add.patientsMin})` : ''}` : '',
@@ -2737,9 +2747,9 @@ const lss = (() => {
                         </tr>`).join('')}
                     </tbody>
                 </table>` : '<div class="eh-info">Keine besonderen Anforderungen: ein passendes Fahrzeug reicht.</div>'}
-                ${missingCount || pickMsg ? `
+                ${pickable || pickMsg ? `
                 <div class="eh-actions">
-                    ${missingCount ? '<button type="button" class="eh-pick">✓ Fehlendes auswählen</button>' : ''}
+                    ${pickable ? '<button type="button" class="eh-pick">✓ Fehlendes auswählen</button>' : ''}
                     ${pickMsg ? `<span class="eh-msg">${pickMsg}</span>` : ''}
                 </div>` : ''}
                 ${info.length ? `<div class="eh-info">${info.map(i => `<span>${i}</span>`).join('')}</div>` : ''}
@@ -4322,6 +4332,13 @@ const lss = (() => {
     // Neueste zuerst; version muss bei jedem neuen Eintrag größer werden
     const CHANGELOG = [
         {
+            version: 27, date: '13.11.2026', title: 'Wahrscheinliche Fahrzeuge mit auswählen',
+            items: [
+                '✓ „Fehlendes auswählen“ nimmt jetzt auch Fahrzeuge mit, die zu 50 % oder mehr gebraucht werden, z.B. NEF 80 %. Darunter (z.B. Drehleiter 20 %) weiterhin nicht',
+                '🚁 Hubschrauber werden dabei nur genommen, wenn kein passendes Fahrzeug am Boden frei ist (NEF vor RTH)',
+            ],
+        },
+        {
             version: 26, date: '13.11.2026', title: 'Fahrzeug-Suche',
             items: [
                 '🔎 Neues Werkzeug „Fahrzeug-Suche“: z.B. „FwK“ oder „Feuerwehrkran“ eintippen und sehen, an welcher Wache er steht, welchen Status er hat und in welchem Einsatz er gerade ist',
@@ -4554,4 +4571,4 @@ const lss = (() => {
 })();
 
 /* exported LSS_BUILD */
-var LSS_BUILD = {"built":"2026-11-13T22:44:42.861Z","files":[["gemeinsam.js",24],["themes.js",502],["fahrzeuge-umbenennen.js",581],["personal-zuweisen.js",681],["personal-verschieben.js",1161],["wachen-check.js",1437],["fahrzeug-uebersicht.js",1665],["personal-werben.js",1820],["auslastung.js",1927],["einsatz-helfer.js",2079],["dashboard.js",2920],["kauf-berater.js",3143],["sprechwunsch.js",3335],["fahrzeug-suche.js",3691],["fahrzeuge-zurueck.js",3852],["fahrzeugnamen-karte.js",4019],["patienten.js",4091],["schnellstart.js",4234],["changelog.js",4313]]};
+var LSS_BUILD = {"built":"2026-11-13T22:47:48.557Z","files":[["gemeinsam.js",24],["themes.js",502],["fahrzeuge-umbenennen.js",581],["personal-zuweisen.js",681],["personal-verschieben.js",1161],["wachen-check.js",1437],["fahrzeug-uebersicht.js",1665],["personal-werben.js",1820],["auslastung.js",1927],["einsatz-helfer.js",2079],["dashboard.js",2930],["kauf-berater.js",3153],["sprechwunsch.js",3345],["fahrzeug-suche.js",3701],["fahrzeuge-zurueck.js",3862],["fahrzeugnamen-karte.js",4029],["patienten.js",4101],["schnellstart.js",4244],["changelog.js",4323]]};

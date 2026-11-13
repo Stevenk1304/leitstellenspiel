@@ -10,6 +10,13 @@
     // Neueste zuerst; version muss bei jedem neuen Eintrag größer werden
     const CHANGELOG = [
         {
+            version: 27, date: '13.11.2026', title: 'Wahrscheinliche Fahrzeuge mit auswählen',
+            items: [
+                '✓ „Fehlendes auswählen“ nimmt jetzt auch Fahrzeuge mit, die zu 50 % oder mehr gebraucht werden, z.B. NEF 80 %. Darunter (z.B. Drehleiter 20 %) weiterhin nicht',
+                '🚁 Hubschrauber werden dabei nur genommen, wenn kein passendes Fahrzeug am Boden frei ist (NEF vor RTH)',
+            ],
+        },
+        {
             version: 26, date: '13.11.2026', title: 'Fahrzeug-Suche',
             items: [
                 '🔎 Neues Werkzeug „Fahrzeug-Suche“: z.B. „FwK“ oder „Feuerwehrkran“ eintippen und sehen, an welcher Wache er steht, welchen Status er hat und in welchem Einsatz er gerade ist',
