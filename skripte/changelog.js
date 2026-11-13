@@ -10,6 +10,13 @@
     // Neueste zuerst; version muss bei jedem neuen Eintrag größer werden
     const CHANGELOG = [
         {
+            version: 21, date: '13.11.2026', title: 'Überzählige Fachleute verteilen',
+            items: [
+                '➕ Neuer Knopf auf der Wachen-Seite und im Werkzeuge-Menü: setzt ausgebildete Leute, von denen die Wache mehr hat als gebraucht (z.B. 6 Notärzte für 1 NEF), auch auf freie Plätze anderer Fahrzeuge',
+                'Fragt vorher nach; für Fahrzeuge mit Ausbildungspflicht bleiben immer genug übrig',
+            ],
+        },
+        {
             version: 20, date: '08.11.2026', title: 'Personal gleichmäßig verteilen',
             items: [
                 '⚖️ Personal zuweisen verteilt freie Leute jetzt gleichmäßig auf LF, HLF, MTW usw. einer Wache, statt die ersten Fahrzeuge voll zu machen und die letzten leer zu lassen',

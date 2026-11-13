@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LSS Skripte
 // @namespace    https://github.com/Stevenk1304/leitstellenspiel
-// @version      3.20261108.2058
+// @version      3.20261113.2000
 // @description  Eigene Werkzeuge für leitstellenspiel.de (Menü 🛠 Werkzeuge in der Spiel-Leiste)
 // @match        https://www.leitstellenspiel.de/*
 // @match        https://leitstellenspiel.de/*
@@ -744,7 +744,9 @@ const lss = (() => {
     // Wer soll zugewiesen werden?
     // neededAtBuilding = Ausbildungen, die irgendein Fahrzeug (oder Anhänger) der Wache braucht
     // knownKeys = alle Ausbildungen, die die Fahrzeugliste überhaupt kennt
-    function pick(personnel, req, max, neededAtBuilding, knownKeys) {
+    // surplus (nur beim Extra-Knopf): {Ausbildung: Anzahl}, wie viele Fachleute dieser Ausbildung die Wache
+    // mehr hat, als ihre Fahrzeuge brauchen. Nur diese überzähligen dürfen auf fremde Plätze.
+    function pick(personnel, req, max, neededAtBuilding, knownKeys, surplus = null) {
         const assigned = personnel.filter(p => p.assigned);
         const free = personnel.filter(p => p.btn && !p.assigned && !p.elsewhere);
         let slots = max - assigned.length;
@@ -773,6 +775,17 @@ const lss = (() => {
         // nicht, bleibt die Person sicherheitshalber frei.
         take(free.filter(p => !p.keys.length), slots);
         take(free.filter(p => p.keys.length && p.keys.every(k => knownKeys.has(k)) && !hasAny(p, neededAtBuilding)), slots);
+        if (surplus) {
+            for (const p of free) {
+                if (slots <= 0) break;
+                if (picks.includes(p) || !p.keys.length || !p.keys.every(k => knownKeys.has(k))) continue;
+                const keys = p.keys.filter(k => neededAtBuilding.has(k));
+                if (!keys.length || !keys.every(k => (surplus[k] ?? 0) > 0)) continue;
+                keys.forEach(k => { surplus[k]--; });
+                picks.push(p);
+                slots--;
+            }
+        }
         return picks;
     }
 
@@ -786,12 +799,12 @@ const lss = (() => {
     }
 
     // Ein Fahrzeug auffüllen, gibt die Anzahl neu zugewiesener Personen zurück
-    async function fillVehicle(vehicle, req, max, neededAtBuilding, knownKeys, isCancelled) {
+    async function fillVehicle(vehicle, req, max, neededAtBuilding, knownKeys, isCancelled, surplus = null) {
         const frame = await openWorker(vehicle.id);
         try {
             const doc = () => frame.contentDocument;
             if (!doc()?.querySelector('#personal_table')) throw new Error('Keine Personalliste gefunden');
-            const picks = pick(readPersonnel(doc()), req, max, neededAtBuilding, knownKeys);
+            const picks = pick(readPersonnel(doc()), req, max, neededAtBuilding, knownKeys, surplus);
             let count = 0;
             for (const p of picks) {
                 if (isCancelled()) break;
@@ -944,8 +957,17 @@ const lss = (() => {
             for (const [key, n] of Object.entries(trailerReq.min)) tow.req.min[key] = Math.max(tow.req.min[key] ?? 0, n);
         }
 
+        // Pro Wache: wie viele Leute mit welcher Ausbildung brauchen die Fahrzeuge insgesamt?
+        const demandByBuilding = {};
+        for (const p of plans.values()) {
+            const demand = demandByBuilding[p.vehicle.building_id] ??= {};
+            for (const key of p.req.all) demand[key] = (demand[key] ?? 0) + p.max;
+            for (const [key, n] of Object.entries(p.req.min)) demand[key] = (demand[key] ?? 0) + n;
+        }
+
         return {
             neededByBuilding,
+            demandByBuilding,
             knownKeys,
             items: selected
                 .map(v => {
@@ -959,15 +981,35 @@ const lss = (() => {
         };
     }
 
-    function showDialog({ items, neededByBuilding, knownKeys }, resort = false) {
+    // Überschuss einer Wache: alle Leute der Wache (frei oder gebunden) je Ausbildung minus Bedarf
+    async function surplusOf(vehicle, demand) {
+        const frame = await openWorker(vehicle.id);
+        try {
+            const doc = frame.contentDocument;
+            if (!doc?.querySelector('#personal_table')) throw new Error('Keine Personalliste gefunden');
+            const supply = {};
+            for (const person of readPersonnel(doc)) person.keys.forEach(k => { supply[k] = (supply[k] ?? 0) + 1; });
+            const surplus = {};
+            for (const [key, n] of Object.entries(supply)) if (n > (demand[key] ?? 0)) surplus[key] = n - (demand[key] ?? 0);
+            return surplus;
+        } finally {
+            frame.remove();
+        }
+    }
+
+    function showDialog({ items, neededByBuilding, demandByBuilding, knownKeys }, mode = 'fill') {
         const label = p => `${p.current} / ${p.max} Personal`;
-        if (resort) return showResortDialog({ items, neededByBuilding, knownKeys }, label);
+        if (mode === 'resort') return showResortDialog({ items, neededByBuilding, knownKeys }, label);
+        const extra = mode === 'surplus';
+        const surplusCache = new Map();
         lss.openDialog({
-            title: 'Personal zuweisen',
+            title: extra ? 'Überzählige Fachleute verteilen' : 'Personal zuweisen',
             count: `${items.length} Fahrzeug${items.length === 1 ? '' : 'e'}`,
             rows: items.map(p => ({ left: p.vehicle.caption, right: label(p) })),
             empty: 'Alle Fahrzeuge sind schon voll besetzt.',
-            hint: 'Es wird nur freies Personal der jeweiligen Wache zugewiesen, gleichmäßig verteilt (z.B. LF und HLF bekommen gleich viel). Ausgebildete Leute bleiben für Fahrzeuge frei, die ihre Ausbildung brauchen (auch fürs Zugfahrzeug eines Anhängers).',
+            hint: extra
+                ? 'Wie „Personal zuweisen“, aber zusätzlich dürfen ausgebildete Leute auf freie Plätze, wenn an ihrer Wache mehr davon da sind als gebraucht: z.B. 6 Notärzte, wenn nur 1 Fahrzeug einen braucht. Für jedes Fahrzeug mit Ausbildungspflicht bleiben genug übrig.'
+                : 'Es wird nur freies Personal der jeweiligen Wache zugewiesen, gleichmäßig verteilt (z.B. LF und HLF bekommen gleich viel). Ausgebildete Leute bleiben für Fahrzeuge frei, die ihre Ausbildung brauchen (auch fürs Zugfahrzeug eines Anhängers).',
             startLabel: 'Personal zuweisen',
             async run(ui) {
                 let added = 0, failed = 0;
@@ -976,9 +1018,16 @@ const lss = (() => {
                     ui.busy(i);
                     try {
                         const needed = neededByBuilding[p.vehicle.building_id] ?? new Set();
-                        await ensureTargets(items, p, neededByBuilding, knownKeys, false);
-                        const limit = p.trained ? p.max : Math.min(p.max, p.target);
-                        const n = p.current < limit ? await fillVehicle(p.vehicle, p.req, limit, needed, knownKeys, ui.cancelled) : 0;
+                        let surplus = null;
+                        if (extra) {
+                            const bid = p.vehicle.building_id;
+                            if (!surplusCache.has(bid)) surplusCache.set(bid, await surplusOf(p.vehicle, demandByBuilding[bid] ?? {}));
+                            surplus = surplusCache.get(bid);
+                        } else {
+                            await ensureTargets(items, p, neededByBuilding, knownKeys, false);
+                        }
+                        const limit = p.trained || extra ? p.max : Math.min(p.max, p.target);
+                        const n = p.current < limit ? await fillVehicle(p.vehicle, p.req, limit, needed, knownKeys, ui.cancelled, surplus) : 0;
                         p.current += n;
                         ui.setRight(i, label(p));
                         if (n) ui.done(i, 'ok', `+${n}`);
@@ -1065,9 +1114,16 @@ const lss = (() => {
         });
     }
 
-    async function start(buildingId, vehicleId, resort = false) {
+    const SURPLUS_CONFIRM = 'Überzählige Fachleute auf freie Plätze setzen?\n\n'
+        + 'Ausgebildete Leute, von denen die Wache mehr hat als gebraucht (z.B. Notärzte), kommen auch auf Fahrzeuge, '
+        + 'die ihre Ausbildung nicht brauchen. Für Fahrzeuge mit Ausbildungspflicht bleiben genug übrig.\n\nFortfahren?';
+
+    // mode: 'fill' (normal), 'resort' (umsortieren) oder 'surplus' (überzählige Fachleute mitverteilen)
+    async function start(buildingId, vehicleId, mode = 'fill') {
+        if (mode === true) mode = 'resort';
+        if (mode === 'surplus' && !confirm(SURPLUS_CONFIRM)) return;
         try {
-            showDialog(await buildPlan(buildingId, vehicleId, resort), resort);
+            showDialog(await buildPlan(buildingId, vehicleId, mode === 'resort'), mode);
         } catch (e) {
             lss.report('Personal zuweisen', e);
         }
@@ -1081,6 +1137,8 @@ const lss = (() => {
     lss.addTool({ label: '👥 Personal zuweisen (alle Wachen)', scope: 'all', order: 30, run: () => start(null, null) });
     lss.addTool({ label: '♻️ Personal umsortieren', scope: 'building', order: 31, run: id => start(id, null, true) });
     lss.addTool({ label: '♻️ Personal umsortieren (alle Wachen)', scope: 'all', order: 31, run: () => start(null, null, true) });
+    lss.addTool({ label: '➕ Überzählige Fachleute verteilen', scope: 'building', order: 32, run: id => start(id, null, 'surplus') });
+    lss.addTool({ label: '➕ Überzählige Fachleute verteilen (alle Wachen)', scope: 'all', order: 32, run: () => start(null, null, 'surplus') });
 
     // Wachen-Seite: alle Fahrzeuge dieser Wache, Knopf direkt über der Fahrzeugliste
     const building = location.pathname.match(/^\/buildings\/(\d+)\/?$/);
@@ -1088,6 +1146,7 @@ const lss = (() => {
     if (building && vehicleTable) {
         lss.addPageButton(vehicleTable, '👥 Personal zuweisen', () => start(Number(building[1]), null));
         lss.addPageButton(vehicleTable, '♻️ Personal umsortieren', () => start(Number(building[1]), null, true));
+        lss.addPageButton(vehicleTable, '➕ Überzählige Fachleute verteilen', () => start(Number(building[1]), null, 'surplus'));
     }
 
     // Zuweisungsseite: nur dieses Fahrzeug
@@ -3653,6 +3712,13 @@ const lss = (() => {
     // Neueste zuerst; version muss bei jedem neuen Eintrag größer werden
     const CHANGELOG = [
         {
+            version: 21, date: '13.11.2026', title: 'Überzählige Fachleute verteilen',
+            items: [
+                '➕ Neuer Knopf auf der Wachen-Seite und im Werkzeuge-Menü: setzt ausgebildete Leute, von denen die Wache mehr hat als gebraucht (z.B. 6 Notärzte für 1 NEF), auch auf freie Plätze anderer Fahrzeuge',
+                'Fragt vorher nach; für Fahrzeuge mit Ausbildungspflicht bleiben immer genug übrig',
+            ],
+        },
+        {
             version: 20, date: '08.11.2026', title: 'Personal gleichmäßig verteilen',
             items: [
                 '⚖️ Personal zuweisen verteilt freie Leute jetzt gleichmäßig auf LF, HLF, MTW usw. einer Wache, statt die ersten Fahrzeuge voll zu machen und die letzten leer zu lassen',
@@ -3839,4 +3905,4 @@ const lss = (() => {
 })();
 
 /* exported LSS_BUILD */
-var LSS_BUILD = {"built":"2026-11-08T19:58:20.279Z","files":[["gemeinsam.js",24],["themes.js",502],["fahrzeuge-umbenennen.js",581],["personal-zuweisen.js",681],["personal-verschieben.js",1102],["wachen-check.js",1378],["fahrzeug-uebersicht.js",1606],["personal-werben.js",1761],["auslastung.js",1868],["einsatz-helfer.js",2020],["dashboard.js",2722],["kauf-berater.js",2945],["sprechwunsch.js",3137],["fahrzeugnamen-karte.js",3493],["schnellstart.js",3565],["changelog.js",3644]]};
+var LSS_BUILD = {"built":"2026-11-13T19:00:13.421Z","files":[["gemeinsam.js",24],["themes.js",502],["fahrzeuge-umbenennen.js",581],["personal-zuweisen.js",681],["personal-verschieben.js",1161],["wachen-check.js",1437],["fahrzeug-uebersicht.js",1665],["personal-werben.js",1820],["auslastung.js",1927],["einsatz-helfer.js",2079],["dashboard.js",2781],["kauf-berater.js",3004],["sprechwunsch.js",3196],["fahrzeugnamen-karte.js",3552],["schnellstart.js",3624],["changelog.js",3703]]};
